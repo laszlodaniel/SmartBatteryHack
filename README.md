@@ -8,3 +8,6 @@ This is a hacking tool for smart batteries using SMBus. Originally written for a
 ![GUI](https://boundaryconditionhome.files.wordpress.com/2020/01/sbhack_gui_01.png)
 
 ![Battery connection](https://boundaryconditionhome.files.wordpress.com/2020/01/img_20200118_104135_02.jpg)
+
+More info about this project:  
+https://boundarycondition.home.blog/2020/01/18/the-repairing-and-hacking-of-a-dell-j1knd-bq8050-laptop-battery/
