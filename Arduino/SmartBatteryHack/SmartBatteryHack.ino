@@ -144,7 +144,7 @@
 // Command 0x02 (status)
 #define sd_timestamp        0x01
 #define sd_scan_smbus       0x02
-#define sd_battery_dump     0x03
+#define sd_smbus_dump       0x03
 
 // SUB-DATA CODE byte
 // Command 0x03 (settings)
@@ -185,8 +185,8 @@ uint8_t block_length = 0;
 uint8_t current_timestamp[4];
 bool reverse_read_word_byte_order = true;
 bool reverse_write_word_byte_order = true;
-uint8_t dump_reg_start = 0x00;
-uint8_t dump_reg_end = 0xFF;
+uint8_t smbus_dump_reg_start = 0x00;
+uint8_t smbus_dump_reg_end = 0xFF;
 
 // Packet related variables
 uint8_t command_timeout = 100; // milliseconds
@@ -300,23 +300,23 @@ void scan_smbus(void)
     else send_usb_packet(status, sd_scan_smbus, err, 1);
 }
 
-void battery_dump(void)
+void smbus_dump(void)
 {
-    uint16_t battery_dump_payload_length = 3*(dump_reg_end - dump_reg_start + 1) + 2;
-    uint8_t battery_dump_payload[battery_dump_payload_length]; // max 770 bytes
-    battery_dump_payload[0] = dump_reg_start; // start register
-    battery_dump_payload[1] = dump_reg_end; // end register
+    uint16_t smbus_dump_payload_length = 3*(smbus_dump_reg_end - smbus_dump_reg_start + 1) + 2;
+    uint8_t smbus_dump_payload[smbus_dump_payload_length]; // max 770 bytes
+    smbus_dump_payload[0] = smbus_dump_reg_start; // start register
+    smbus_dump_payload[1] = smbus_dump_reg_end; // end register
     uint16_t data = 0;
     
-    for (uint16_t i = dump_reg_start; i < (dump_reg_end + 1); i++)
+    for (uint16_t i = smbus_dump_reg_start; i < (smbus_dump_reg_end + 1); i++)
     {
         data = read_word(i, reverse_read_word_byte_order);
-        battery_dump_payload[2 + (3*(i-dump_reg_start))] = i; // register first
-        battery_dump_payload[3 + (3*(i-dump_reg_start))] = (data >> 8) & 0xFF; // high byte of the word there
-        battery_dump_payload[4 + (3*(i-dump_reg_start))] = data & 0xFF; // low byte of the word there
+        smbus_dump_payload[2 + (3*(i-smbus_dump_reg_start))] = i; // register first
+        smbus_dump_payload[3 + (3*(i-smbus_dump_reg_start))] = (data >> 8) & 0xFF; // high byte of the word there
+        smbus_dump_payload[4 + (3*(i-smbus_dump_reg_start))] = data & 0xFF; // low byte of the word there
     }
     
-    send_usb_packet(status, sd_battery_dump, battery_dump_payload, battery_dump_payload_length);
+    send_usb_packet(status, sd_smbus_dump, smbus_dump_payload, smbus_dump_payload_length);
 }
 
 void update_timestamp(uint8_t *target)
@@ -543,7 +543,7 @@ void handle_usb_data(void)
                             scan_smbus();
                             break;
                         }
-                        case sd_battery_dump: // 0x03 - battery dump
+                        case sd_smbus_dump: // 0x03 - smbus dump
                         {
                             if (!payload_bytes || (payload_length < 2))
                             {
@@ -551,9 +551,9 @@ void handle_usb_data(void)
                             }
                             else
                             {
-                                dump_reg_start = cmd_payload[0];
-                                dump_reg_end = cmd_payload[1];
-                                battery_dump();
+                                smbus_dump_reg_start = cmd_payload[0];
+                                smbus_dump_reg_end = cmd_payload[1];
+                                smbus_dump();
                             }
                             break;
                         }
