@@ -133,6 +133,7 @@ namespace SmartBatteryHack
                         {
                             Util.UpdateTextBox(CommunicationTextBox, "[INFO] " + Serial.PortName + " is opened by another application", null);
                             Util.UpdateTextBox(CommunicationTextBox, "[INFO] Device not found at " + Serial.PortName, null);
+                            break;
                         }
 
                         if (Serial.IsOpen)
