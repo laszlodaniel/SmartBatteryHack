@@ -42,7 +42,7 @@
             this.VersionLabel.Name = "VersionLabel";
             this.VersionLabel.Size = new System.Drawing.Size(145, 13);
             this.VersionLabel.TabIndex = 6;
-            this.VersionLabel.Text = "Version: SBHACK.2020.0001";
+            this.VersionLabel.Text = "Version: SBHACK.2020.0002";
             // 
             // AboutDescriptionLabel
             // 
@@ -57,7 +57,7 @@
             // 
             this.AboutTitleLabel.AutoSize = true;
             this.AboutTitleLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(238)));
-            this.AboutTitleLabel.Location = new System.Drawing.Point(139, 9);
+            this.AboutTitleLabel.Location = new System.Drawing.Point(139, 8);
             this.AboutTitleLabel.Name = "AboutTitleLabel";
             this.AboutTitleLabel.Size = new System.Drawing.Size(166, 20);
             this.AboutTitleLabel.TabIndex = 4;
@@ -82,6 +82,7 @@
             this.Controls.Add(this.AboutDescriptionLabel);
             this.Controls.Add(this.AboutTitleLabel);
             this.MaximizeBox = false;
+            this.MinimizeBox = false;
             this.Name = "AboutForm";
             this.Text = "About";
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.AboutForm_FormClosed);

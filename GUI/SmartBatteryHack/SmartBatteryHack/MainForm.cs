@@ -230,7 +230,15 @@ namespace SmartBatteryHack
             // First just add the received bytes to a global list
             for (int i = 0; i < DataLength; i++)
             {
-                bufferlist.Add((byte)sp.ReadByte());
+                try
+                {
+                    bufferlist.Add((byte)sp.ReadByte());
+                }
+                catch
+                {
+                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Serial read error", null);
+                    break;
+                }
             }
 
             // Multiple packets are handled one after another in this while-loop
