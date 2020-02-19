@@ -121,7 +121,7 @@
 #define DataFlashClassSubClass2     0x79
 #define DataFlashClassSubClass3     0x7a
 
-#define buffer_length                32
+#define buffer_length               128
 
 // Set (1), clear (0) and invert (1->0; 0->1) bit in a register or variable easily
 #define sbi(reg, bit) (reg) |=  (1 << (bit))
