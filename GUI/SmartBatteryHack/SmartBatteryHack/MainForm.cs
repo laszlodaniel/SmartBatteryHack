@@ -22,6 +22,7 @@ namespace SmartBatteryHack
         public List<byte> bufferlist = new List<byte>();
         public byte ConnectionCounter = 0;
         public List<ushort> SMBusRegisterDumpList = new List<ushort>();
+        public ushort DesignVoltage = 0;
         
         public byte[] CurrentSettings = new byte[] { 0x3D, 0x00, 0x02, 0x03, 0x01, 0x06 };
 
@@ -352,6 +353,8 @@ namespace SmartBatteryHack
                                                 Util.UpdateTextBox(CommunicationTextBox, "[RX->] SMBus register dump (" + Util.ByteToHexString(Payload, 0, 1) + "-" + Util.ByteToHexString(Payload, 1, 2) + ")", packet);
                                                 if (Payload.Length > 2)
                                                 {
+                                                    SMBusRegisterDumpList.Clear();
+
                                                     for (int i = 1; i < (Payload.Length - 2); i++)
                                                     {
                                                         i += 2;
@@ -361,12 +364,35 @@ namespace SmartBatteryHack
                                                     byte[] data = new byte[2];
                                                     StringBuilder value = new StringBuilder();
                                                     byte start_reg = Payload[0];
+                                                    byte current_reg = 0;
 
                                                     for (int i = 0; i < SMBusRegisterDumpList.Count; i++)
                                                     {
                                                         data[0] = (byte)(SMBusRegisterDumpList[i] >> 8 & 0xFF);
                                                         data[1] = (byte)(SMBusRegisterDumpList[i] & 0xFF);
-                                                        value.Append("       [" + Util.ByteToHexString(new byte[] { (byte)(i + start_reg) }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data.Length));
+                                                        current_reg = (byte)(i + start_reg);
+                                                        value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data.Length) + " // ");
+
+                                                        switch (current_reg)
+                                                        {
+                                                            case 0x00:
+                                                                value.Append("ManufacturerAccess: " + Util.ByteToHexString(data, 0, data.Length));
+                                                                break;
+                                                            case 0x01:
+                                                                if (DesignVoltage > 0) value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh = " + Math.Round((DesignVoltage / 1000D) * SMBusRegisterDumpList[i]).ToString("0") + " mWh");
+                                                                else value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh");
+                                                                break;
+                                                            case 0x02:
+                                                                value.Append("RemainingTimeAlarm: " + SMBusRegisterDumpList[i].ToString() + " minutes");
+                                                                break;
+                                                            case 0x03:
+                                                                value.Append("BatteryMode: " + "N/A");
+                                                                break;
+                                                            default:
+                                                                value.Append(Util.ByteToHexString(data, 0, data.Length));
+                                                                break;
+                                                        }
+
                                                         if (i != (SMBusRegisterDumpList.Count - 1)) value.Append(Environment.NewLine);
                                                     }
 
@@ -384,7 +410,7 @@ namespace SmartBatteryHack
                                             case 0x01: // current settings
                                             case 0x03:
                                                 Util.UpdateTextBox(CommunicationTextBox, "[RX->] Device settings", packet);
-                                                if (Payload.Length > 0)
+                                                if (Payload.Length > 2)
                                                 {
                                                     WordByteOrderComboBox.BeginInvoke((MethodInvoker)delegate
                                                     {
@@ -397,7 +423,9 @@ namespace SmartBatteryHack
                                                     else if ((Payload[0] & 0x03) == 2) reverse = "reverse write";
                                                     else if ((Payload[0] & 0x03) == 3) reverse = "reverse read/write";
                                                     else reverse = "unknown";
+                                                    DesignVoltage = (ushort)((Payload[1] << 8) + Payload[2]);
                                                     Util.UpdateTextBox(CommunicationTextBox, "[INFO] Word byte-order: " + reverse, null);
+                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Design voltage: " + (DesignVoltage / 1000D).ToString("0.0") + " V", null);
                                                 }
                                                 break;
                                             case 0x02: // select smbus address
@@ -937,15 +965,11 @@ namespace SmartBatteryHack
 
         private void AboutToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (about == null || !about.Visible)
+            about = new AboutForm(this)
             {
-                about = new AboutForm(this);
-                about.Show();
-            }
-            else
-            {
-                about.BringToFront();
-            }
+                StartPosition = FormStartPosition.CenterParent
+            };
+            about.ShowDialog();
         }
 
         private void WordByteOrderOKButton_Click(object sender, EventArgs e)

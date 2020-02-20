@@ -187,6 +187,7 @@ bool reverse_read_word_byte_order = true;
 bool reverse_write_word_byte_order = true;
 uint8_t smbus_dump_reg_start = 0x00;
 uint8_t smbus_dump_reg_end = 0xFF;
+uint16_t design_voltage = 0;
 
 // Packet related variables
 uint8_t command_timeout = 100; // milliseconds
@@ -606,10 +607,12 @@ void handle_usb_data(void)
                     {
                         case sd_current_settings: // 0x01 - current settings
                         {
-                            uint8_t ret[1] = { 0x00 };
+                            uint8_t ret[3] = { 0x00, 0x00, 0x00 };
                             if (reverse_read_word_byte_order) sbi(ret[0], 0);
                             if (reverse_write_word_byte_order) sbi(ret[0], 1);
-                            send_usb_packet(settings, sd_current_settings, ret, 1);
+                            ret[1] = (design_voltage >> 8) & 0xFF;
+                            ret[2] = design_voltage & 0xFF;
+                            send_usb_packet(settings, sd_current_settings, ret, 3);
                             break;
                         }
                         case sd_set_sb_address: // 0x02 - set smart battery address
@@ -817,5 +820,6 @@ void setup()
 void loop()
 {
     wdt_reset(); // reset watchdog timer to 0 seconds so no accidental restart occurs
+    if (design_voltage == 0) design_voltage = read_word(0x19);
     handle_usb_data();
 }

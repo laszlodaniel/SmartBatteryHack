@@ -63,12 +63,13 @@
             this.ReadRegisterComboBox = new System.Windows.Forms.ComboBox();
             this.ReadLabel = new System.Windows.Forms.Label();
             this.RegisterLabelRead = new System.Windows.Forms.Label();
-            this.menuStrip1 = new System.Windows.Forms.MenuStrip();
+            this.MenuStrip = new System.Windows.Forms.MenuStrip();
             this.AboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.DebugGroupBox = new System.Windows.Forms.GroupBox();
             this.ControlGroupBox.SuspendLayout();
             this.CommunicationGroupBox.SuspendLayout();
             this.ToolsGroupBox.SuspendLayout();
-            this.menuStrip1.SuspendLayout();
+            this.MenuStrip.SuspendLayout();
             this.SuspendLayout();
             // 
             // ControlGroupBox
@@ -145,14 +146,14 @@
             this.CommunicationGroupBox.Controls.Add(this.CommunicationTextBox);
             this.CommunicationGroupBox.Location = new System.Drawing.Point(11, 27);
             this.CommunicationGroupBox.Name = "CommunicationGroupBox";
-            this.CommunicationGroupBox.Size = new System.Drawing.Size(365, 265);
+            this.CommunicationGroupBox.Size = new System.Drawing.Size(700, 265);
             this.CommunicationGroupBox.TabIndex = 4;
             this.CommunicationGroupBox.TabStop = false;
             this.CommunicationGroupBox.Text = "Communication";
             // 
             // SendButton
             // 
-            this.SendButton.Location = new System.Drawing.Point(312, 237);
+            this.SendButton.Location = new System.Drawing.Point(647, 237);
             this.SendButton.Name = "SendButton";
             this.SendButton.Size = new System.Drawing.Size(51, 25);
             this.SendButton.TabIndex = 2;
@@ -166,7 +167,7 @@
             this.SendComboBox.FormattingEnabled = true;
             this.SendComboBox.Location = new System.Drawing.Point(3, 238);
             this.SendComboBox.Name = "SendComboBox";
-            this.SendComboBox.Size = new System.Drawing.Size(308, 23);
+            this.SendComboBox.Size = new System.Drawing.Size(643, 23);
             this.SendComboBox.TabIndex = 1;
             this.SendComboBox.KeyPress += new System.Windows.Forms.KeyPressEventHandler(this.SendComboBox_KeyPress);
             // 
@@ -179,7 +180,7 @@
             this.CommunicationTextBox.Name = "CommunicationTextBox";
             this.CommunicationTextBox.ReadOnly = true;
             this.CommunicationTextBox.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.CommunicationTextBox.Size = new System.Drawing.Size(359, 220);
+            this.CommunicationTextBox.Size = new System.Drawing.Size(694, 220);
             this.CommunicationTextBox.TabIndex = 0;
             // 
             // ToolsGroupBox
@@ -467,15 +468,15 @@
             this.RegisterLabelRead.TabIndex = 1;
             this.RegisterLabelRead.Text = "Register:";
             // 
-            // menuStrip1
+            // MenuStrip
             // 
-            this.menuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.MenuStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.AboutToolStripMenuItem});
-            this.menuStrip1.Location = new System.Drawing.Point(0, 0);
-            this.menuStrip1.Name = "menuStrip1";
-            this.menuStrip1.Size = new System.Drawing.Size(389, 24);
-            this.menuStrip1.TabIndex = 7;
-            this.menuStrip1.Text = "menuStrip1";
+            this.MenuStrip.Location = new System.Drawing.Point(0, 0);
+            this.MenuStrip.Name = "MenuStrip";
+            this.MenuStrip.Size = new System.Drawing.Size(724, 24);
+            this.MenuStrip.TabIndex = 7;
+            this.MenuStrip.Text = "menuStrip1";
             // 
             // AboutToolStripMenuItem
             // 
@@ -484,16 +485,27 @@
             this.AboutToolStripMenuItem.Text = "About";
             this.AboutToolStripMenuItem.Click += new System.EventHandler(this.AboutToolStripMenuItem_Click);
             // 
+            // DebugGroupBox
+            // 
+            this.DebugGroupBox.Location = new System.Drawing.Point(390, 298);
+            this.DebugGroupBox.Name = "DebugGroupBox";
+            this.DebugGroupBox.Size = new System.Drawing.Size(321, 227);
+            this.DebugGroupBox.TabIndex = 8;
+            this.DebugGroupBox.TabStop = false;
+            this.DebugGroupBox.Text = "Debug";
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(389, 536);
+            this.ClientSize = new System.Drawing.Size(724, 536);
+            this.Controls.Add(this.DebugGroupBox);
             this.Controls.Add(this.ToolsGroupBox);
             this.Controls.Add(this.ControlGroupBox);
             this.Controls.Add(this.CommunicationGroupBox);
-            this.Controls.Add(this.menuStrip1);
-            this.MainMenuStrip = this.menuStrip1;
+            this.Controls.Add(this.MenuStrip);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedSingle;
+            this.MainMenuStrip = this.MenuStrip;
             this.MaximizeBox = false;
             this.Name = "MainForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
@@ -505,8 +517,8 @@
             this.CommunicationGroupBox.PerformLayout();
             this.ToolsGroupBox.ResumeLayout(false);
             this.ToolsGroupBox.PerformLayout();
-            this.menuStrip1.ResumeLayout(false);
-            this.menuStrip1.PerformLayout();
+            this.MenuStrip.ResumeLayout(false);
+            this.MenuStrip.PerformLayout();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -544,13 +556,14 @@
         private System.Windows.Forms.TextBox RegStartTextBox;
         private System.Windows.Forms.TextBox RegEndTextBox;
         private System.Windows.Forms.Label DashLabel;
-        private System.Windows.Forms.MenuStrip menuStrip1;
+        private System.Windows.Forms.MenuStrip MenuStrip;
         private System.Windows.Forms.ToolStripMenuItem AboutToolStripMenuItem;
         private System.Windows.Forms.ComboBox SMBusAddressComboBox;
         private System.Windows.Forms.Button SMBusAddressSelectButton;
         private System.Windows.Forms.ComboBox WordByteOrderComboBox;
         private System.Windows.Forms.Label WordByteOrderLabel;
         private System.Windows.Forms.Button WordByteOrderOKButton;
+        private System.Windows.Forms.GroupBox DebugGroupBox;
     }
 }
 

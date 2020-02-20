@@ -36,7 +36,7 @@ namespace SmartBatteryHack
                         ret.Append(Convert.ToString(data[i], 16).PadLeft(2, '0').PadRight(3, ' ').ToUpper());
 
                         counter++;
-                        if (counter > 15)
+                        if (counter > 31)
                         {
                             if (i != (length - 1)) ret.Append(Environment.NewLine); // New line after every 16 bytes
                             counter = 0;
