@@ -121,7 +121,7 @@
 #define DataFlashClassSubClass2     0x79
 #define DataFlashClassSubClass3     0x7a
 
-#define buffer_length               128
+#define buffer_length               256
 
 // Set (1), clear (0) and invert (1->0; 0->1) bit in a register or variable easily
 #define sbi(reg, bit) (reg) |=  (1 << (bit))
@@ -249,16 +249,14 @@ uint16_t write_word(uint8_t reg, uint16_t data, bool reverse = true)
     return 2;
 }
 
-uint8_t read_block(uint8_t reg, uint8_t* block_buffer, uint8_t block_buffer_length) 
+uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length) 
 {
-    uint8_t i;
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
     i2c_rep_start((sb_address << 1) | I2C_READ);
     uint8_t read_length = i2c_read(false); // first byte is length, 1 byte will be index 0
     block_buffer[0] = read_length;
-    read_length = constrain(read_length, 0, block_buffer_length - 2); // room for null at the end
-    for (i = 0; i < read_length - 1; i++) // last byte needs to be nack'd
+    for (uint16_t i = 0; i < read_length - 1; i++) // last byte needs to be nack'd
     {
         block_buffer[1 + i] = i2c_read(false);
     }
@@ -267,13 +265,12 @@ uint8_t read_block(uint8_t reg, uint8_t* block_buffer, uint8_t block_buffer_leng
     return (read_length + 1);
 }
 
-uint8_t write_block(uint8_t reg, uint8_t* block_buffer, uint8_t block_buffer_length) 
+uint16_t write_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length) 
 {
-    uint8_t i;
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
     i2c_rep_start((sb_address << 1) | I2C_WRITE);
-    for (i = 0; i < block_buffer_length; i++)
+    for (uint16_t i = 0; i < block_buffer_length; i++)
     {
          i2c_write(block_buffer[i]);
     }
@@ -388,7 +385,7 @@ void send_usb_packet(uint8_t command, uint8_t subdatacode, uint8_t *payloadbuff,
     if (free_ram() < (packet_length + 50)) // require +50 free bytes to be safe
     {
         uint8_t error[7] = { 0x3D, 0x00, 0x03, 0x8F, 0xFD, 0xFF, 0x8E }; // prepare the "not enough MCU RAM" error message
-        for (uint16_t i = 0; i < 7; i++)
+        for (uint8_t i = 0; i < 7; i++)
         {
             Serial.write(error[i]);
         }
