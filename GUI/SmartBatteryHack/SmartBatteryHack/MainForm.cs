@@ -18,13 +18,14 @@ namespace SmartBatteryHack
         public bool SerialPortAvailable = false;
         public bool Timeout = false;
         public bool DeviceFound = false;
-        public byte[] buffer = new byte[2048];
         public List<byte> bufferlist = new List<byte>();
-        public byte ConnectionCounter = 0;
         public List<ushort> SMBusRegisterDumpList = new List<ushort>();
         public ushort DesignVoltage = 0;
-        
-        public byte[] CurrentSettings = new byte[] { 0x3D, 0x00, 0x02, 0x03, 0x01, 0x06 };
+        public string SelectedPort = String.Empty;
+
+        public byte[] HandshakeRequest = new byte[] { 0x3D, 0x00, 0x02, 0x01, 0x00, 0x03 };
+        public byte[] ExpectedHandshake = new byte[] { 0x3D, 0x00, 0x08, 0x81, 0x00, 0x53, 0x42, 0x48, 0x41, 0x43, 0x4B, 0x35 };
+        public byte[] CurrentSettingsRequest = new byte[] { 0x3D, 0x00, 0x02, 0x03, 0x01, 0x06 };
 
         AboutForm about;
         SerialPort Serial = new SerialPort();
@@ -83,16 +84,43 @@ namespace SmartBatteryHack
                 COMPortsComboBox.Items.AddRange(ports);
                 SerialPortAvailable = true;
                 ConnectButton.Enabled = true;
+
+                if (SelectedPort == String.Empty) // if no port has been selected
+                {
+                    COMPortsComboBox.SelectedIndex = 0; // select first available port
+                    SelectedPort = COMPortsComboBox.Text;
+                }
+                else
+                {
+                    try
+                    {
+                        COMPortsComboBox.SelectedIndex = COMPortsComboBox.Items.IndexOf(SelectedPort);
+                    }
+                    catch
+                    {
+                        COMPortsComboBox.SelectedIndex = 0;
+                    }
+                }
             }
             else
             {
                 COMPortsComboBox.Items.Add("N/A");
                 SerialPortAvailable = false;
                 ConnectButton.Enabled = false;
+                COMPortsComboBox.SelectedIndex = 0; // select "N/A"
+                SelectedPort = String.Empty;
                 Util.UpdateTextBox(CommunicationTextBox, "[INFO] No device available", null);
             }
+        }
 
-            COMPortsComboBox.SelectedIndex = 0; // select first available item
+        private void COMPortsComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            SelectedPort = COMPortsComboBox.Text;
+        }
+
+        private void RefreshButton_Click(object sender, EventArgs e)
+        {
+            UpdateCOMPortList();
         }
 
         private void TimeoutHandler(object source, ElapsedEventArgs e)
@@ -108,9 +136,9 @@ namespace SmartBatteryHack
 
                 if (SerialPortAvailable)
                 {
-                    byte[] HandshakeRequest = new byte[] { 0x3D, 0x00, 0x02, 0x01, 0x00, 0x03 };
-                    byte[] ExpectedHandshake = new byte[] { 0x3D, 0x00, 0x08, 0x81, 0x00, 0x53, 0x42, 0x48, 0x41, 0x43, 0x4B, 0x35 };
-
+                    byte[] buffer = new byte[2048];
+                    byte ConnectionCounter = 0;
+                    
                     while (ConnectionCounter < 5) // try connecting to the device 5 times, then give up
                     {
                         ConnectButton.Enabled = false; // no double-click
@@ -185,7 +213,7 @@ namespace SmartBatteryHack
                                     ResetButton.Enabled = true;
                                     ToolsGroupBox.Enabled = true;
                                     Serial.DataReceived += new SerialDataReceivedEventHandler(SerialDataReceivedHandler);
-                                    Serial.Write(CurrentSettings, 0, CurrentSettings.Length);
+                                    Serial.Write(CurrentSettingsRequest, 0, CurrentSettingsRequest.Length);
                                     break; // exit while-loop
                                 }
                                 else
@@ -669,11 +697,6 @@ namespace SmartBatteryHack
                 if (Util.HexStringToByte(WriteDataTextBox.Text).Length > 2) WriteBlockButton.PerformClick();
                 e.Handled = true;
             }
-        }
-
-        private void RefreshButton_Click(object sender, EventArgs e)
-        {
-            UpdateCOMPortList();
         }
 
         private void ResetButton_Click(object sender, EventArgs e)

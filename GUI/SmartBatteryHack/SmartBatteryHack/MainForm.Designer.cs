@@ -128,6 +128,7 @@
             this.COMPortsComboBox.Name = "COMPortsComboBox";
             this.COMPortsComboBox.Size = new System.Drawing.Size(60, 23);
             this.COMPortsComboBox.TabIndex = 1;
+            this.COMPortsComboBox.SelectedIndexChanged += new System.EventHandler(this.COMPortsComboBox_SelectedIndexChanged);
             // 
             // ConnectButton
             // 
