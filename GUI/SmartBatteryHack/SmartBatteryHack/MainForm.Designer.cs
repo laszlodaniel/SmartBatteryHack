@@ -66,10 +66,14 @@
             this.MenuStrip = new System.Windows.Forms.MenuStrip();
             this.AboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.DebugGroupBox = new System.Windows.Forms.GroupBox();
+            this.ReadROMByBytesCheckBox = new System.Windows.Forms.CheckBox();
+            this.ReadROMButton = new System.Windows.Forms.Button();
+            this.ReadROMDescriptionLabel = new System.Windows.Forms.Label();
             this.ControlGroupBox.SuspendLayout();
             this.CommunicationGroupBox.SuspendLayout();
             this.ToolsGroupBox.SuspendLayout();
             this.MenuStrip.SuspendLayout();
+            this.DebugGroupBox.SuspendLayout();
             this.SuspendLayout();
             // 
             // ControlGroupBox
@@ -488,12 +492,44 @@
             // 
             // DebugGroupBox
             // 
+            this.DebugGroupBox.Controls.Add(this.ReadROMDescriptionLabel);
+            this.DebugGroupBox.Controls.Add(this.ReadROMByBytesCheckBox);
+            this.DebugGroupBox.Controls.Add(this.ReadROMButton);
             this.DebugGroupBox.Location = new System.Drawing.Point(390, 298);
             this.DebugGroupBox.Name = "DebugGroupBox";
             this.DebugGroupBox.Size = new System.Drawing.Size(321, 227);
             this.DebugGroupBox.TabIndex = 8;
             this.DebugGroupBox.TabStop = false;
             this.DebugGroupBox.Text = "Debug";
+            // 
+            // ReadROMByBytesCheckBox
+            // 
+            this.ReadROMByBytesCheckBox.AutoSize = true;
+            this.ReadROMByBytesCheckBox.Location = new System.Drawing.Point(89, 24);
+            this.ReadROMByBytesCheckBox.Name = "ReadROMByBytesCheckBox";
+            this.ReadROMByBytesCheckBox.Size = new System.Drawing.Size(195, 17);
+            this.ReadROMByBytesCheckBox.TabIndex = 1;
+            this.ReadROMByBytesCheckBox.Text = "Read ROM by bytes (default: block)";
+            this.ReadROMByBytesCheckBox.UseVisualStyleBackColor = true;
+            // 
+            // ReadROMButton
+            // 
+            this.ReadROMButton.Location = new System.Drawing.Point(8, 20);
+            this.ReadROMButton.Name = "ReadROMButton";
+            this.ReadROMButton.Size = new System.Drawing.Size(75, 23);
+            this.ReadROMButton.TabIndex = 0;
+            this.ReadROMButton.Text = "Read ROM";
+            this.ReadROMButton.UseVisualStyleBackColor = true;
+            this.ReadROMButton.Click += new System.EventHandler(this.ReadROMButton_Click);
+            // 
+            // ReadROMDescriptionLabel
+            // 
+            this.ReadROMDescriptionLabel.AutoSize = true;
+            this.ReadROMDescriptionLabel.Location = new System.Drawing.Point(6, 46);
+            this.ReadROMDescriptionLabel.Name = "ReadROMDescriptionLabel";
+            this.ReadROMDescriptionLabel.Size = new System.Drawing.Size(307, 13);
+            this.ReadROMDescriptionLabel.TabIndex = 2;
+            this.ReadROMDescriptionLabel.Text = "Read interval: 0x0000-0x07FF, 0x4000-0x47FF, 0x8000-0x87FF";
             // 
             // MainForm
             // 
@@ -520,6 +556,8 @@
             this.ToolsGroupBox.PerformLayout();
             this.MenuStrip.ResumeLayout(false);
             this.MenuStrip.PerformLayout();
+            this.DebugGroupBox.ResumeLayout(false);
+            this.DebugGroupBox.PerformLayout();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -565,6 +603,9 @@
         private System.Windows.Forms.Label WordByteOrderLabel;
         private System.Windows.Forms.Button WordByteOrderOKButton;
         private System.Windows.Forms.GroupBox DebugGroupBox;
+        private System.Windows.Forms.Button ReadROMButton;
+        private System.Windows.Forms.CheckBox ReadROMByBytesCheckBox;
+        private System.Windows.Forms.Label ReadROMDescriptionLabel;
     }
 }
 

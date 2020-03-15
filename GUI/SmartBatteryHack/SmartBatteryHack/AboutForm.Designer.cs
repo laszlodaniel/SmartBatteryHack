@@ -42,7 +42,7 @@
             this.VersionLabel.Name = "VersionLabel";
             this.VersionLabel.Size = new System.Drawing.Size(145, 13);
             this.VersionLabel.TabIndex = 6;
-            this.VersionLabel.Text = "Version: SBHACK.2020.0004";
+            this.VersionLabel.Text = "Version: SBHACK.2020.0005";
             // 
             // AboutDescriptionLabel
             // 

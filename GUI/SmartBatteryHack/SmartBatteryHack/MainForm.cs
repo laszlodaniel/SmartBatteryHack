@@ -15,6 +15,7 @@ namespace SmartBatteryHack
         public string DateTimeNow;
         public static string USBLogFilename;
         public static string USBBinaryLogFilename;
+        public static string ROMBinaryFilename;
         public bool SerialPortAvailable = false;
         public bool Timeout = false;
         public bool DeviceFound = false;
@@ -41,11 +42,13 @@ namespace SmartBatteryHack
         {
             // Create LOG directory if it doesn't exist
             if (!Directory.Exists("LOG")) Directory.CreateDirectory("LOG");
+            if (!Directory.Exists("ROMs")) Directory.CreateDirectory("ROMs");
 
             // Set logfile names inside the LOG directory
             DateTimeNow = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             USBLogFilename = @"LOG/usblog_" + DateTimeNow + ".txt";
             USBBinaryLogFilename = @"LOG/usblog_" + DateTimeNow + ".bin";
+            ROMBinaryFilename = @"ROMs/rom_" + DateTimeNow + ".bin";
 
             UpdateCOMPortList();
 
@@ -275,9 +278,14 @@ namespace SmartBatteryHack
             {
                 if (bufferlist[0] == 0x3D)
                 {
+                    if (bufferlist.Count < 3) break; // wait for the length bytes
+
                     int PacketLength = (bufferlist[1] << 8) + bufferlist[2];
                     int FullPacketLength = PacketLength + 4;
-                    byte[] packet = new byte[FullPacketLength];
+
+                    if (bufferlist.Count < FullPacketLength) break; // wait for the rest of the bytes to arrive
+
+                    byte[] Packet = new byte[FullPacketLength];
                     int PayloadLength = PacketLength - 2;
                     byte[] Payload = new byte[PayloadLength];
                     int ChecksumLocation = PacketLength + 3;
@@ -288,331 +296,360 @@ namespace SmartBatteryHack
                     byte Checksum = 0;
                     byte CalculatedChecksum = 0;
 
-                    if (bufferlist.Count == packet.Length)
+                    Array.Copy(bufferlist.ToArray(), 0, Packet, 0, Packet.Length);
+
+                    Checksum = Packet[ChecksumLocation]; // get packet checksum byte
+
+                    for (int i = 1; i < ChecksumLocation; i++)
                     {
-                        Array.Copy(bufferlist.ToArray(), 0, packet, 0, packet.Length);
+                        CalculatedChecksum += Packet[i]; // calculate checksum
+                    }
 
-                        Checksum = packet[ChecksumLocation]; // get packet checksum byte
+                    if (CalculatedChecksum == Checksum) // verify checksum
+                    {
+                        DataCode = Packet[3];
+                        Source = (byte)((DataCode >> 7) & 0x01);
+                        Command = (byte)(DataCode & 0x0F);
+                        SubDataCode = Packet[4];
 
-                        for (int i = 1; i < ChecksumLocation; i++)
+                        if (PayloadLength > 0) // copy payload bytes if available
                         {
-                            CalculatedChecksum += packet[i]; // calculate checksum
+                            Array.Copy(Packet, 5, Payload, 0, PayloadLength);
                         }
 
-                        if (CalculatedChecksum == Checksum) // verify checksum
+                        if (Source == 1) // highest bit set in the DataCode byte means the packet is coming from the device
                         {
-                            DataCode = packet[3];
-                            Source = (byte)((DataCode >> 7) & 0x01);
-                            Command = (byte)(DataCode & 0x0F);
-                            SubDataCode = packet[4];
-
-                            if (Source == 1) // highest bit set in the DataCode byte means the packet is coming from the device
+                            switch (Command) // based on the datacode decide what to do with this packet
                             {
-                                if (PayloadLength > 0) // copy payload bytes if available
-                                {
-                                    Array.Copy(packet, 5, Payload, 0, PayloadLength);
-                                }
+                                case 0x00: // reset
+                                    switch (SubDataCode)
+                                    {
+                                        case 0x00:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Device is resetting, please wait...", Packet);
+                                            break;
+                                        case 0x01:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Device is ready", Packet);
+                                            break;
+                                        default:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Unknown reset packet", Packet);
+                                            break;
+                                    }
+                                    break;
+                                case 0x01: // handshake
+                                    Util.UpdateTextBox(CommunicationTextBox, "[RX->] Handshake received", Packet);
+                                    if (Encoding.ASCII.GetString(Payload, 0, Payload.Length) == "SBHACK") Util.UpdateTextBox(CommunicationTextBox, "[INFO] Handshake OK: SBHACK", null);
+                                    else Util.UpdateTextBox(CommunicationTextBox, "[INFO] Handshake ERROR: " + Encoding.ASCII.GetString(Payload, 0, Payload.Length), null);
+                                    break;
+                                case 0x02: // status
+                                    switch (SubDataCode)
+                                    {
+                                        case 0x01: // timestamp
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Timestamp received", Packet);
+                                            if (Payload.Length > 3)
+                                            {
+                                                TimeSpan ElapsedTime = TimeSpan.FromMilliseconds(Payload[0] << 24 | Payload[1] << 16 | Payload[2] << 8 | Payload[3]);
+                                                DateTime Timestamp = DateTime.Today.Add(ElapsedTime);
+                                                string TimestampString = Timestamp.ToString("HH:mm:ss.fff");
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Timestamp: " + TimestampString, null);
+                                            }
+                                            break;
+                                        case 0x02: // scan SMBus address result
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Scan SMBus address result", Packet);
+                                            if ((Payload.Length > 0) && (Payload[0] != 0xFF))
+                                            {
+                                                string SmartBatteryAddressList = Util.ByteToHexString(Payload, 0, Payload.Length);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] SMBus device(s): " + SmartBatteryAddressList, null);
 
-                                switch (Command) // based on the datacode decide what to do with this packet
-                                {
-                                    case 0x00: // reset
-                                        switch (SubDataCode)
-                                        {
-                                            case 0x00:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Device is resetting, please wait...", packet);
-                                                break;
-                                            case 0x01:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Device is ready", packet);
-                                                break;
-                                            default:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Unknown reset packet", packet);
-                                                break;
-                                        }
-                                        break;
-                                    case 0x01: // handshake
-                                        Util.UpdateTextBox(CommunicationTextBox, "[RX->] Handshake received", packet);
-                                        if (Encoding.ASCII.GetString(Payload, 0, Payload.Length) == "SBHACK") Util.UpdateTextBox(CommunicationTextBox, "[INFO] Handshake OK: SBHACK", null);
-                                        else Util.UpdateTextBox(CommunicationTextBox, "[INFO] Handshake ERROR: " + Encoding.ASCII.GetString(Payload, 0, Payload.Length), null);
-                                        break;
-                                    case 0x02: // status
-                                        switch (SubDataCode)
-                                        {
-                                            case 0x01: // timestamp
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Timestamp received", packet);
-                                                if (Payload.Length > 3)
+                                                SMBusAddressComboBox.BeginInvoke((MethodInvoker)delegate
                                                 {
-                                                    TimeSpan ElapsedTime = TimeSpan.FromMilliseconds(Payload[0] << 24 | Payload[1] << 16 | Payload[2] << 8 | Payload[3]);
-                                                    DateTime Timestamp = DateTime.Today.Add(ElapsedTime);
-                                                    string TimestampString = Timestamp.ToString("HH:mm:ss.fff");
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Timestamp: " + TimestampString, null);
-                                                }
-                                                break;
-                                            case 0x02: // scan SMBus result
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Scan SMBus result", packet);
-                                                if ((Payload.Length > 0) && (Payload[0] != 0xFF))
-                                                {
-                                                    string SmartBatteryAddressList = Util.ByteToHexString(Payload, 0, Payload.Length);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] SMBus device(s): " + SmartBatteryAddressList, null);
-
-                                                    SMBusAddressComboBox.BeginInvoke((MethodInvoker)delegate
+                                                    SMBusAddressComboBox.Items.Clear();
+                                                    for (int i = 0; i < Payload.Length; i++)
                                                     {
-                                                        SMBusAddressComboBox.Items.Clear();
-                                                        for (int i = 0; i < Payload.Length; i++)
-                                                        {
-                                                            SMBusAddressComboBox.Items.Add(Util.ByteToHexString(Payload, i, i + 1));
-                                                        }
-                                                        SMBusAddressComboBox.SelectedIndex = 0;
-                                                        SMBusAddressSelectButton.Enabled = true;
-                                                    });
-                                                }
-                                                else
-                                                {
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] No SMBus device found", null);
+                                                        SMBusAddressComboBox.Items.Add(Util.ByteToHexString(Payload, i, i + 1));
+                                                    }
+                                                    SMBusAddressComboBox.SelectedIndex = 0;
+                                                    SMBusAddressSelectButton.Enabled = true;
+                                                });
+                                            }
+                                            else
+                                            {
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] No SMBus device found", null);
 
-                                                    SMBusAddressComboBox.BeginInvoke((MethodInvoker)delegate
-                                                    {
-                                                        SMBusAddressComboBox.Items.Clear();
-                                                        SMBusAddressComboBox.Items.Add("--");
-                                                        SMBusAddressSelectButton.Enabled = false;
-                                                    });
-                                                }
-                                                break;
-                                            case 0x03: // smbus register dump
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] SMBus register dump (" + Util.ByteToHexString(Payload, 0, 1) + "-" + Util.ByteToHexString(Payload, 1, 2) + ")", packet);
-                                                if (Payload.Length > 2)
+                                                SMBusAddressComboBox.BeginInvoke((MethodInvoker)delegate
                                                 {
-                                                    SMBusRegisterDumpList.Clear();
+                                                    SMBusAddressComboBox.Items.Clear();
+                                                    SMBusAddressComboBox.Items.Add("--");
+                                                    SMBusAddressSelectButton.Enabled = false;
+                                                });
+                                            }
+                                            break;
+                                        case 0x03: // smbus register dump
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] SMBus register dump (" + Util.ByteToHexString(Payload, 0, 1) + "-" + Util.ByteToHexString(Payload, 1, 2) + ")", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                SMBusRegisterDumpList.Clear();
 
-                                                    for (int i = 1; i < (Payload.Length - 2); i++)
+                                                for (int i = 1; i < (Payload.Length - 2); i++)
+                                                {
+                                                    i += 2;
+                                                    SMBusRegisterDumpList.Add((ushort)((Payload[i] << 8) + Payload[i + 1]));
+                                                }
+
+                                                byte[] data = new byte[2];
+                                                StringBuilder value = new StringBuilder();
+                                                byte start_reg = Payload[0];
+                                                byte current_reg = 0;
+
+                                                for (int i = 0; i < SMBusRegisterDumpList.Count; i++)
+                                                {
+                                                    data[0] = (byte)(SMBusRegisterDumpList[i] >> 8 & 0xFF);
+                                                    data[1] = (byte)(SMBusRegisterDumpList[i] & 0xFF);
+                                                    current_reg = (byte)(i + start_reg);
+                                                    value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data.Length) + " // ");
+
+                                                    switch (current_reg)
                                                     {
-                                                        i += 2;
-                                                        SMBusRegisterDumpList.Add((ushort)((Payload[i] << 8) + Payload[i + 1]));
+                                                        case 0x00:
+                                                            value.Append("ManufacturerAccess: " + Util.ByteToHexString(data, 0, data.Length));
+                                                            break;
+                                                        case 0x01:
+                                                            if (DesignVoltage > 0) value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh = " + Math.Round((DesignVoltage / 1000D) * SMBusRegisterDumpList[i]).ToString("0") + " mWh");
+                                                            else value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh");
+                                                            break;
+                                                        case 0x02:
+                                                            value.Append("RemainingTimeAlarm: " + SMBusRegisterDumpList[i].ToString() + " minutes");
+                                                            break;
+                                                        case 0x03:
+                                                            value.Append("BatteryMode: " + "N/A");
+                                                            break;
+                                                        default:
+                                                            value.Append(Util.ByteToHexString(data, 0, data.Length));
+                                                            break;
                                                     }
 
-                                                    byte[] data = new byte[2];
-                                                    StringBuilder value = new StringBuilder();
-                                                    byte start_reg = Payload[0];
-                                                    byte current_reg = 0;
-
-                                                    for (int i = 0; i < SMBusRegisterDumpList.Count; i++)
-                                                    {
-                                                        data[0] = (byte)(SMBusRegisterDumpList[i] >> 8 & 0xFF);
-                                                        data[1] = (byte)(SMBusRegisterDumpList[i] & 0xFF);
-                                                        current_reg = (byte)(i + start_reg);
-                                                        value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data.Length) + " // ");
-
-                                                        switch (current_reg)
-                                                        {
-                                                            case 0x00:
-                                                                value.Append("ManufacturerAccess: " + Util.ByteToHexString(data, 0, data.Length));
-                                                                break;
-                                                            case 0x01:
-                                                                if (DesignVoltage > 0) value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh = " + Math.Round((DesignVoltage / 1000D) * SMBusRegisterDumpList[i]).ToString("0") + " mWh");
-                                                                else value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh");
-                                                                break;
-                                                            case 0x02:
-                                                                value.Append("RemainingTimeAlarm: " + SMBusRegisterDumpList[i].ToString() + " minutes");
-                                                                break;
-                                                            case 0x03:
-                                                                value.Append("BatteryMode: " + "N/A");
-                                                                break;
-                                                            default:
-                                                                value.Append(Util.ByteToHexString(data, 0, data.Length));
-                                                                break;
-                                                        }
-
-                                                        if (i != (SMBusRegisterDumpList.Count - 1)) value.Append(Environment.NewLine);
-                                                    }
-
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] SMBus register dump details (" + Util.ByteToHexString(Payload, 0, 1) + "-" + Util.ByteToHexString(Payload, 1, 2) + "):" + Environment.NewLine + value.ToString(), null);
+                                                    if (i != (SMBusRegisterDumpList.Count - 1)) value.Append(Environment.NewLine);
                                                 }
-                                                break;
-                                            default:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", packet);
-                                                break;
-                                        }
-                                        break;
-                                    case 0x03: // settings
-                                        switch (SubDataCode)
-                                        {
-                                            case 0x01: // current settings
-                                            case 0x03:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Device settings", packet);
-                                                if (Payload.Length > 2)
+
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] SMBus register dump details (" + Util.ByteToHexString(Payload, 0, 1) + "-" + Util.ByteToHexString(Payload, 1, 2) + "):" + Environment.NewLine + value.ToString(), null);
+                                            }
+                                            break;
+                                        default:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", Packet);
+                                            break;
+                                    }
+                                    break;
+                                case 0x03: // settings
+                                    switch (SubDataCode)
+                                    {
+                                        case 0x01: // current settings
+                                        case 0x03:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Device settings", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                WordByteOrderComboBox.BeginInvoke((MethodInvoker)delegate
                                                 {
-                                                    WordByteOrderComboBox.BeginInvoke((MethodInvoker)delegate
-                                                    {
-                                                        WordByteOrderComboBox.SelectedIndex = Payload[0];
-                                                    });
+                                                    WordByteOrderComboBox.SelectedIndex = Payload[0];
+                                                });
 
-                                                    string reverse = string.Empty;
-                                                    if ((Payload[0] & 0x03) == 0) reverse = "no reverse";
-                                                    else if ((Payload[0] & 0x03) == 1) reverse = "reverse read";
-                                                    else if ((Payload[0] & 0x03) == 2) reverse = "reverse write";
-                                                    else if ((Payload[0] & 0x03) == 3) reverse = "reverse read/write";
-                                                    else reverse = "unknown";
-                                                    DesignVoltage = (ushort)((Payload[1] << 8) + Payload[2]);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Word byte-order: " + reverse, null);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Design voltage: " + (DesignVoltage / 1000D).ToString("0.0") + " V", null);
-                                                }
-                                                break;
-                                            case 0x02: // select smbus address
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] SMBus settings", packet);
-                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Current SMBus device address: " + Util.ByteToHexString(Payload, 0, 1), null);
-                                                break;
-                                            default:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", packet);
-                                                break;
-                                        }
-                                        break;
-                                    case 0x04: // read data
-                                        switch (SubDataCode)
-                                        {
-                                            case 0x01: // read byte data
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Byte data received", packet);
-                                                if (Payload.Length > 1)
-                                                {
-                                                    string register = Util.ByteToHexString(Payload, 0, 1);
-                                                    string data = Util.ByteToHexString(Payload, 1, 2);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
-                                                                                             "       Data: " + data, null);
+                                                string reverse = string.Empty;
+                                                if ((Payload[0] & 0x03) == 0) reverse = "no reverse";
+                                                else if ((Payload[0] & 0x03) == 1) reverse = "reverse read";
+                                                else if ((Payload[0] & 0x03) == 2) reverse = "reverse write";
+                                                else if ((Payload[0] & 0x03) == 3) reverse = "reverse read/write";
+                                                else reverse = "unknown";
+                                                DesignVoltage = (ushort)((Payload[1] << 8) + Payload[2]);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Word byte-order: " + reverse, null);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Design voltage: " + (DesignVoltage / 1000D).ToString("0.0") + " V", null);
+                                            }
+                                            break;
+                                        case 0x02: // select smbus address
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] SMBus settings", Packet);
+                                            Util.UpdateTextBox(CommunicationTextBox, "[INFO] Current SMBus device address: " + Util.ByteToHexString(Payload, 0, 1), null);
+                                            break;
+                                        default:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", Packet);
+                                            break;
+                                    }
+                                    break;
+                                case 0x04: // read data
+                                    switch (SubDataCode)
+                                    {
+                                        case 0x01: // read byte data
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Byte data received", Packet);
+                                            if (Payload.Length > 1)
+                                            {
+                                                string register = Util.ByteToHexString(Payload, 0, 1);
+                                                string data = Util.ByteToHexString(Payload, 1, 2);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
+                                                                                            "       Data: " + data, null);
 
-                                                    ReadDataTextBox.BeginInvoke((MethodInvoker)delegate
-                                                    {
-                                                        ReadDataTextBox.Text = data;
-                                                    });
-                                                }
-                                                break;
-                                            case 0x02: // read word data
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Word data received", packet);
-                                                if (Payload.Length > 2)
+                                                ReadDataTextBox.BeginInvoke((MethodInvoker)delegate
                                                 {
-                                                    string register = Util.ByteToHexString(Payload, 0, 1);
-                                                    string data = Util.ByteToHexString(Payload, 1, 3);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
-                                                                                             "       Data: " + data, null);
+                                                    ReadDataTextBox.Text = data;
+                                                });
+                                            }
+                                            break;
+                                        case 0x02: // read word data
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Word data received", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                string register = Util.ByteToHexString(Payload, 0, 1);
+                                                string data = Util.ByteToHexString(Payload, 1, 3);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
+                                                                                            "       Data: " + data, null);
 
-                                                    ReadDataTextBox.BeginInvoke((MethodInvoker)delegate
-                                                    {
-                                                        ReadDataTextBox.Text = data;
-                                                    });
-                                                }
-                                                break;
-                                            case 0x03: // read block data
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Block data received", packet);
-                                                if (Payload.Length > 2)
+                                                ReadDataTextBox.BeginInvoke((MethodInvoker)delegate
                                                 {
-                                                    string register = Util.ByteToHexString(Payload, 0, 1);
-                                                    string data = Encoding.ASCII.GetString(Payload, 2, Payload.Length - 2);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
-                                                                                             "       Data: " + data, null);
+                                                    ReadDataTextBox.Text = data;
+                                                });
+                                            }
+                                            break;
+                                        case 0x03: // read block data
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Block data received", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                string register = Util.ByteToHexString(Payload, 0, 1);
+                                                string data = Encoding.ASCII.GetString(Payload, 2, Payload.Length - 2);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
+                                                                                            "       Data: " + data, null);
 
-                                                    ReadDataTextBox.BeginInvoke((MethodInvoker)delegate
-                                                    {
-                                                        ReadDataTextBox.Text = data;
-                                                    });
-                                                }
-                                                break;
-                                            default:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", packet);
-                                                break;
-                                        }
-                                        break;
-                                    case 0x05: // write data
-                                        switch (SubDataCode)
-                                        {
-                                            case 0x01: // write data byte
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Byte data write response", packet);
-                                                if (Payload.Length > 2)
+                                                ReadDataTextBox.BeginInvoke((MethodInvoker)delegate
                                                 {
-                                                    string register = Util.ByteToHexString(Payload, 0, 1);
-                                                    string data = Util.ByteToHexString(Payload, 1, 2);
-                                                    string success = Util.ByteToHexString(Payload, 2, 3);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
-                                                                                             "       Data: " + data + Environment.NewLine +
-                                                                                             "       # of bytes written: " + success, null);
-                                                }
-                                                break;
-                                            case 0x02: // write data word
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Word data write response", packet);
-                                                if (Payload.Length > 3)
+                                                    ReadDataTextBox.Text = data;
+                                                });
+                                            }
+                                            break;
+                                        case 0x04: // read rom byte
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] ROM byte data received", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                string address = Util.ByteToHexString(Payload, 0, 2);
+                                                string data = Util.ByteToHexString(Payload, 2, Payload.Length);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] ROM address: " + address + "; Data:" + Environment.NewLine + data, null);
+
+                                                // Save data to a binary file
+                                                using (BinaryWriter writer = new BinaryWriter(File.Open(ROMBinaryFilename, FileMode.Append)))
                                                 {
-                                                    string register = Util.ByteToHexString(Payload, 0, 1);
-                                                    string data = Util.ByteToHexString(Payload, 1, 3);
-                                                    string success = Util.ByteToHexString(Payload, 3, 4);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
-                                                                                             "       Data: " + data + Environment.NewLine +
-                                                                                             "       # of bytes written: " + success, null);
+                                                    writer.Write(Payload, 2, Payload.Length - 2);
+                                                    writer.Close();
                                                 }
-                                                break;
-                                            case 0x03: // write data block
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Block data write response", packet);
-                                                if (Payload.Length > 2)
+                                            }
+                                            break;
+                                        case 0x05: // read rom block
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] ROM block data received", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                string address = Util.ByteToHexString(Payload, 0, 2);
+                                                string data = Util.ByteToHexString(Payload, 2, Payload.Length);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] ROM address: " + address + "; Data:" + Environment.NewLine + data, null);
+
+                                                // Save data to a binary file
+                                                using (BinaryWriter writer = new BinaryWriter(File.Open(ROMBinaryFilename, FileMode.Append)))
                                                 {
-                                                    string register = Util.ByteToHexString(Payload, 0, 1);
-                                                    string data = Util.ByteToHexString(Payload, 1, Payload.Length - 1);
-                                                    string success = Util.ByteToHexString(Payload, Payload.Length - 1, Payload.Length);
-                                                    Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
-                                                                                             "       Data: " + data + Environment.NewLine +
-                                                                                             "       # of bytes written: " + success, null);
+                                                    writer.Write(Payload, 2, Payload.Length - 2);
+                                                    writer.Close();
                                                 }
-                                                break;
-                                            default:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", packet);
-                                                break;
-                                        }
-                                        break;
-                                    case 0x0F: // OK/Error
-                                        switch (SubDataCode)
-                                        {
-                                            case 0x00:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] OK", packet);
-                                                break;
-                                            case 0x01:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid length", packet);
-                                                break;
-                                            case 0x02:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid command", packet);
-                                                break;
-                                            case 0x03:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid sub-data code", packet);
-                                                break;
-                                            case 0x04:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid payload value(s)", packet);
-                                                break;
-                                            case 0x05:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid checksum", packet);
-                                                break;
-                                            case 0x06:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: packet timeout occured", packet);
-                                                break;
-                                            case 0xFD:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: not enough MCU RAM", packet);
-                                                break;
-                                            case 0xFE:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: internal error", packet);
-                                                break;
-                                            case 0xFF:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: fatal error", packet);
-                                                break;
-                                            default:
-                                                Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", packet);
-                                                break;
-                                        }
-                                        break;
-                                    default:
-                                        Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", packet);
-                                        break;
-                                }
+                                            }
+                                            break;
+                                        default:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", Packet);
+                                            break;
+                                    }
+                                    break;
+                                case 0x05: // write data
+                                    switch (SubDataCode)
+                                    {
+                                        case 0x01: // write data byte
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Byte data write response", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                string register = Util.ByteToHexString(Payload, 0, 1);
+                                                string data = Util.ByteToHexString(Payload, 1, 2);
+                                                string success = Util.ByteToHexString(Payload, 2, 3);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
+                                                                                            "       Data: " + data + Environment.NewLine +
+                                                                                            "       # of bytes written: " + success, null);
+                                            }
+                                            break;
+                                        case 0x02: // write data word
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Word data write response", Packet);
+                                            if (Payload.Length > 3)
+                                            {
+                                                string register = Util.ByteToHexString(Payload, 0, 1);
+                                                string data = Util.ByteToHexString(Payload, 1, 3);
+                                                string success = Util.ByteToHexString(Payload, 3, 4);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
+                                                                                            "       Data: " + data + Environment.NewLine +
+                                                                                            "       # of bytes written: " + success, null);
+                                            }
+                                            break;
+                                        case 0x03: // write data block
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Block data write response", Packet);
+                                            if (Payload.Length > 2)
+                                            {
+                                                string register = Util.ByteToHexString(Payload, 0, 1);
+                                                string data = Util.ByteToHexString(Payload, 1, Payload.Length - 1);
+                                                string success = Util.ByteToHexString(Payload, Payload.Length - 1, Payload.Length);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Reg.: " + register + Environment.NewLine +
+                                                                                            "       Data: " + data + Environment.NewLine +
+                                                                                            "       # of bytes written: " + success, null);
+                                            }
+                                            break;
+                                        default:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", Packet);
+                                            break;
+                                    }
+                                    break;
+                                case 0x0F: // OK/Error
+                                    switch (SubDataCode)
+                                    {
+                                        case 0x00:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] OK", Packet);
+                                            break;
+                                        case 0x01:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid length", Packet);
+                                            break;
+                                        case 0x02:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid command", Packet);
+                                            break;
+                                        case 0x03:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid sub-data code", Packet);
+                                            break;
+                                        case 0x04:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid payload value(s)", Packet);
+                                            break;
+                                        case 0x05:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: invalid checksum", Packet);
+                                            break;
+                                        case 0x06:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: packet timeout occured", Packet);
+                                            break;
+                                        case 0xFD:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: not enough MCU RAM", Packet);
+                                            break;
+                                        case 0xFE:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: internal error", Packet);
+                                            break;
+                                        case 0xFF:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Error: fatal error", Packet);
+                                            break;
+                                        default:
+                                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", Packet);
+                                            break;
+                                    }
+                                    break;
+                                default:
+                                    Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received", Packet);
+                                    break;
                             }
                         }
-                        else
-                        {
-                            Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received with checksum error", packet);
-                        }
-
-                        bufferlist.RemoveRange(0, packet.Length);
                     }
+                    else
+                    {
+                        Util.UpdateTextBox(CommunicationTextBox, "[RX->] Data received with checksum error", Packet);
+                    }
+
+                    bufferlist.RemoveRange(0, Packet.Length);
                 }
                 else
                 {
@@ -1010,6 +1047,22 @@ namespace SmartBatteryHack
             byte[] ChangeWordByteOrder = packet.ToArray();
             Util.UpdateTextBox(CommunicationTextBox, "[<-TX] Change word byte-order settings", ChangeWordByteOrder);
             Serial.Write(ChangeWordByteOrder, 0, ChangeWordByteOrder.Length);
+        }
+
+        private void ReadROMButton_Click(object sender, EventArgs e)
+        {
+            if (ReadROMByBytesCheckBox.Checked)
+            {
+                byte[] ReadROMByte = new byte[] { 0x3D, 0x00, 0x02, 0x04, 0x04, 0x0A }; // read ROM byte by byte
+                Util.UpdateTextBox(CommunicationTextBox, "[<-TX] Read ROM byte by byte", ReadROMByte);
+                Serial.Write(ReadROMByte, 0, ReadROMByte.Length);
+            }
+            else
+            {
+                byte[] ReadROMBlock = new byte[] { 0x3D, 0x00, 0x02, 0x04, 0x05, 0x0B }; // read ROM block by block
+                Util.UpdateTextBox(CommunicationTextBox, "[<-TX] Read ROM block by block", ReadROMBlock);
+                Serial.Write(ReadROMBlock, 0, ReadROMBlock.Length);
+            }
         }
     }
 }

@@ -80,10 +80,10 @@
 #define CellVoltage2                0x3e
 #define CellVoltage1                0x3f
 
-#define Unknown_40                  0x40
-
-#define Unknown_42                  0x42
-#define Unknown_43                  0x43
+#define SetROMAddress               0x40 // word write only
+#define Unknown_41                  0x41
+#define PeekROMByte                 0x42
+#define PeekROMBlock                0x43 // block read, size seems to be always 0x20 (32 bytes)
 
 #define FETControl                  0x46
   
@@ -121,7 +121,7 @@
 #define DataFlashClassSubClass2     0x79
 #define DataFlashClassSubClass3     0x7a
 
-#define buffer_length               256
+#define buffer_length               257 // 1 length byte + 256 data byte
 
 // Set (1), clear (0) and invert (1->0; 0->1) bit in a register or variable easily
 #define sbi(reg, bit) (reg) |=  (1 << (bit))
@@ -131,38 +131,40 @@
 // Packet related stuff
 // DATA CODE byte building blocks
 // Commands (low nibble (4 bits))
-#define reset               0x00
-#define handshake           0x01
-#define status              0x02
-#define settings            0x03
-#define read_data           0x04
-#define write_data          0x05
+#define reset                   0x00
+#define handshake               0x01
+#define status                  0x02
+#define settings                0x03
+#define read_data               0x04
+#define write_data              0x05
 // 0x06-0x0E reserved
-#define ok_error            0x0F
+#define ok_error                0x0F
 
 // SUB-DATA CODE byte
 // Command 0x02 (status)
-#define sd_timestamp        0x01
-#define sd_scan_smbus       0x02
-#define sd_smbus_dump       0x03
+#define sd_timestamp            0x01
+#define sd_scan_smbus_address   0x02
+#define sd_smbus_reg_dump       0x03
 
 // SUB-DATA CODE byte
 // Command 0x03 (settings)
-#define sd_current_settings 0x01
-#define sd_set_sb_address   0x02
-#define sd_word_byte_order  0x03
+#define sd_current_settings     0x01
+#define sd_set_sb_address       0x02
+#define sd_word_byte_order      0x03
 
 // SUB-DATA CODE byte
 // Command 0x04 (read_data)
-#define sd_read_byte        0x01
-#define sd_read_word        0x02
-#define sd_read_block       0x03
+#define sd_read_byte            0x01
+#define sd_read_word            0x02
+#define sd_read_block           0x03
+#define sd_read_rom_byte        0x04
+#define sd_read_rom_block       0x05
 
 // SUB-DATA CODE byte
 // Command 0x05 (write_data)
-#define sd_write_byte       0x01
-#define sd_write_word       0x02
-#define sd_write_block      0x03
+#define sd_write_byte           0x01
+#define sd_write_word           0x02
+#define sd_write_block          0x03
 
 // SUB-DATA CODE byte
 // Command 0x0F (ok_error)
@@ -178,15 +180,15 @@
 #define error_fatal                             0xFF
 
 uint8_t buffer[buffer_length];
-uint8_t scan_smbus_result[8];
-uint8_t scan_smbus_result_ptr = 0;
+uint8_t scan_smbus_address_result[8];
+uint8_t scan_smbus_address_result_ptr = 0;
 uint8_t sb_address = 0x0b; // default smart battery address
 uint8_t block_length = 0;
 uint8_t current_timestamp[4];
 bool reverse_read_word_byte_order = true;
 bool reverse_write_word_byte_order = true;
-uint8_t smbus_dump_reg_start = 0x00;
-uint8_t smbus_dump_reg_end = 0xFF;
+uint8_t smbus_reg_start = 0x00;
+uint8_t smbus_reg_end = 0xFF;
 uint16_t design_voltage = 0;
 
 // Packet related variables
@@ -249,12 +251,12 @@ uint16_t write_word(uint8_t reg, uint16_t data, bool reverse = true)
     return 2;
 }
 
-uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length) 
+uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length)
 {
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
     i2c_rep_start((sb_address << 1) | I2C_READ);
-    uint8_t read_length = i2c_read(false); // first byte is length, 1 byte will be index 0
+    uint8_t read_length = i2c_read(false); // first byte is length
     block_buffer[0] = read_length;
     for (uint16_t i = 0; i < read_length - 1; i++) // last byte needs to be nack'd
     {
@@ -265,7 +267,7 @@ uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_le
     return (read_length + 1);
 }
 
-uint16_t write_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length) 
+uint16_t write_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length)
 {
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
@@ -278,43 +280,142 @@ uint16_t write_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_l
     return block_buffer_length;
 }
 
-void scan_smbus(void)
+void scan_smbus_address(void)
 {
-    scan_smbus_result_ptr = 0;
+    scan_smbus_address_result_ptr = 0;
     
     for (uint8_t i = 3; i < 120; i++)
     {
         bool ack = i2c_start((i << 1) | I2C_WRITE); 
         if (ack)
         {
-            scan_smbus_result[scan_smbus_result_ptr] = i;
-            scan_smbus_result_ptr++;
-            if (scan_smbus_result_ptr > 7) scan_smbus_result_ptr = 7;
+            scan_smbus_address_result[scan_smbus_address_result_ptr] = i;
+            scan_smbus_address_result_ptr++;
+            if (scan_smbus_address_result_ptr > 7) scan_smbus_address_result_ptr = 7;
         }
         i2c_stop();
     }
 
-    if (scan_smbus_result_ptr > 0) send_usb_packet(status, sd_scan_smbus, scan_smbus_result, scan_smbus_result_ptr);
-    else send_usb_packet(status, sd_scan_smbus, err, 1);
+    if (scan_smbus_address_result_ptr > 0) send_usb_packet(status, sd_scan_smbus_address, scan_smbus_address_result, scan_smbus_address_result_ptr);
+    else send_usb_packet(status, sd_scan_smbus_address, err, 1);
 }
 
-void smbus_dump(void)
+void smbus_reg_dump(void)
 {
-    uint16_t smbus_dump_payload_length = 3*(smbus_dump_reg_end - smbus_dump_reg_start + 1) + 2;
-    uint8_t smbus_dump_payload[smbus_dump_payload_length]; // max 770 bytes
-    smbus_dump_payload[0] = smbus_dump_reg_start; // start register
-    smbus_dump_payload[1] = smbus_dump_reg_end; // end register
+    uint16_t smbus_reg_dump_payload_length = 3*(smbus_reg_end - smbus_reg_start + 1) + 2;
+    uint8_t smbus_reg_dump_payload[smbus_reg_dump_payload_length]; // max 770 bytes
+    smbus_reg_dump_payload[0] = smbus_reg_start; // start register
+    smbus_reg_dump_payload[1] = smbus_reg_end; // end register
     uint16_t data = 0;
     
-    for (uint16_t i = smbus_dump_reg_start; i < (smbus_dump_reg_end + 1); i++)
+    for (uint16_t i = smbus_reg_start; i < (smbus_reg_end + 1); i++)
     {
         data = read_word(i, reverse_read_word_byte_order);
-        smbus_dump_payload[2 + (3*(i-smbus_dump_reg_start))] = i; // register first
-        smbus_dump_payload[3 + (3*(i-smbus_dump_reg_start))] = (data >> 8) & 0xFF; // high byte of the word there
-        smbus_dump_payload[4 + (3*(i-smbus_dump_reg_start))] = data & 0xFF; // low byte of the word there
+        smbus_reg_dump_payload[2 + (3*(i-smbus_reg_start))] = i; // register first
+        smbus_reg_dump_payload[3 + (3*(i-smbus_reg_start))] = (data >> 8) & 0xFF; // high byte of the word there
+        smbus_reg_dump_payload[4 + (3*(i-smbus_reg_start))] = data & 0xFF; // low byte of the word there
     }
     
-    send_usb_packet(status, sd_smbus_dump, smbus_dump_payload, smbus_dump_payload_length);
+    send_usb_packet(status, sd_smbus_reg_dump, smbus_reg_dump_payload, smbus_reg_dump_payload_length);
+}
+
+void read_rom_byte(void)
+{
+    uint16_t address = 0;
+    uint8_t data = 0;
+    uint8_t byte_buffer_size = 128; // gather data in 128 bytes chunk
+    uint8_t byte_buffer[byte_buffer_size];
+    uint8_t byte_buffer_ptr = 0;
+    uint8_t byte_payload_size = byte_buffer_size + 2;
+    uint8_t byte_payload[byte_payload_size];
+    uint8_t counter = 0;
+    bool done = false;
+    
+    while (!done)
+    {
+        wdt_reset(); // reset watchdog timer here so no autoreset occurs; this while-loop blocks the main loop for more than 4 seconds
+        write_word(SetROMAddress, address); // set address to the next row
+
+        counter = 0;
+        while (counter < 50)
+        {
+            data = read_byte(PeekROMByte); // get memory value and save it to the buffer
+            if (data != 0x17) break;
+            counter++;
+            delay(10);
+        }
+        
+        byte_buffer[byte_buffer_ptr] = data; // get memory value and save it to the buffer
+        byte_buffer_ptr++;
+
+        if (byte_buffer_ptr == byte_buffer_size)
+        {
+            
+            byte_payload[0] = ((address - (byte_buffer_size - 1)) >> 8) & 0xFF;
+            byte_payload[1] = (address - (byte_buffer_size - 1)) & 0xFF;
+
+            for (uint8_t i = 0; i < byte_buffer_size; i++)
+            {
+                byte_payload[2 + i] = byte_buffer[i];
+            }
+        
+            byte_buffer_ptr = 0; // reset buffer pointer to the beginning
+            send_usb_packet(read_data, sd_read_rom_byte, byte_payload, byte_payload_size);
+        }
+
+        address++;
+        if (address == 0x0800) address = 0x4000; // skip the following values because they are repeating until 0x4000; unique data length is only 0x0800
+        if (address == 0x4800) address = 0x8000; // skip this portion of the values because they are repeating until 0x8000; unique data length is only 0x0800
+        if (address == 0x8800) done = true;
+    }
+
+    delay(200);
+    send_usb_packet(ok_error, ok, ack, 1);
+}
+
+void read_rom_block(void)
+{
+    uint16_t address = 0;
+    uint8_t block_size = 0x20;
+    uint8_t block_buffer_size = block_size + 1; // +1 block size byte
+    uint8_t block_buffer[block_buffer_size];
+    uint8_t block_payload_length = block_size + 2; // +2 address bytes at the beginning + block without length byte
+    uint8_t block_payload[block_payload_length];
+    uint8_t counter = 0;
+    bool done = false;
+    
+    while (!done)
+    {
+        wdt_reset(); // reset watchdog timer here so no autoreset occurs; this while-loop blocks the main loop for more than 4 seconds
+
+        counter = 0;
+        do
+        {
+            write_word(SetROMAddress, address);
+            delay(20);
+            counter++;
+        }
+        while ((read_byte(PeekROMBlock) != 0x20) && (counter < 50));
+
+        read_block(PeekROMBlock, block_buffer, block_buffer_size);
+        block_payload[0] = (address >> 8) & 0xFF;
+        block_payload[1] = address & 0xFF;
+
+        for (uint8_t i = 0; i < block_size; i++)
+        {
+            block_payload[2 + i] = block_buffer[1 + i]; // skip first length byte from the block_buffer
+        }
+
+        send_usb_packet(read_data, sd_read_rom_block, block_payload, block_payload_length);
+
+        address += block_size;
+        if (address == 0x0800) address = 0x4000; // skip the followin values because they are repeating until 0x4000; unique data length is only 0x0800
+        if (address == 0x4800) address = 0x8000; // skip this portion of the values because they are repeating until 0x8000; unique data length is only 0x0800
+        if (address == 0x8800) done = true;
+    }
+
+    delay(200);
+    send_usb_packet(ok_error, ok, ack, 1);
 }
 
 void update_timestamp(uint8_t *target)
@@ -572,23 +673,22 @@ void handle_usb_data(void)
                             send_usb_packet(status, sd_timestamp, current_timestamp, 4);
                             break;
                         }
-                        case sd_scan_smbus: // 0x02 - scan SMBus
+                        case sd_scan_smbus_address: // 0x02 - scan SMBus
                         {
-                            scan_smbus();
+                            scan_smbus_address();
                             break;
                         }
-                        case sd_smbus_dump: // 0x03 - smbus dump
+                        case sd_smbus_reg_dump: // 0x03 - smbus dump
                         {
                             if (!payload_bytes || (payload_length < 2))
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                smbus_dump_reg_start = cmd_payload[0];
-                                smbus_dump_reg_end = cmd_payload[1];
-                                smbus_dump();
-                            }
+
+                            smbus_reg_start = cmd_payload[0];
+                            smbus_reg_end = cmd_payload[1];
+                            smbus_reg_dump();
                             break;
                         }
                         default:
@@ -609,6 +709,7 @@ void handle_usb_data(void)
                             if (reverse_write_word_byte_order) sbi(ret[0], 1);
                             ret[1] = (design_voltage >> 8) & 0xFF;
                             ret[2] = design_voltage & 0xFF;
+                            
                             send_usb_packet(settings, sd_current_settings, ret, 3);
                             break;
                         }
@@ -617,12 +718,12 @@ void handle_usb_data(void)
                             if (!payload_bytes)
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                sb_address = cmd_payload[0];
-                                send_usb_packet(settings, sd_set_sb_address, cmd_payload, 1);
-                            }
+
+                            sb_address = cmd_payload[0];
+                            
+                            send_usb_packet(settings, sd_set_sb_address, cmd_payload, 1);
                             break;
                         }
                         case sd_word_byte_order: // 0x03 - read/write word byte-order
@@ -630,16 +731,15 @@ void handle_usb_data(void)
                             if (!payload_bytes)
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                if (cmd_payload[0] & 0x01) reverse_read_word_byte_order = true;
-                                else reverse_read_word_byte_order = false;
-                                if (cmd_payload[0] & 0x02) reverse_write_word_byte_order = true;
-                                else reverse_write_word_byte_order = false;
 
-                                send_usb_packet(settings, sd_word_byte_order, cmd_payload, 1);
-                            }
+                            if (cmd_payload[0] & 0x01) reverse_read_word_byte_order = true;
+                            else reverse_read_word_byte_order = false;
+                            if (cmd_payload[0] & 0x02) reverse_write_word_byte_order = true;
+                            else reverse_write_word_byte_order = false;
+
+                            send_usb_packet(settings, sd_word_byte_order, cmd_payload, 1);
                             break;
                         }
                         default:
@@ -658,14 +758,14 @@ void handle_usb_data(void)
                             if (!payload_bytes)
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                uint8_t response[2];
-                                response[0] = cmd_payload[0];
-                                response[1] = read_byte(cmd_payload[0]);
-                                send_usb_packet(read_data, sd_read_byte, response, 2);
-                            }
+
+                            uint8_t response[2];
+                            response[0] = cmd_payload[0];
+                            response[1] = read_byte(cmd_payload[0]);
+                            
+                            send_usb_packet(read_data, sd_read_byte, response, 2);
                             break;
                         }
                         case sd_read_word: // 0x02 - read word
@@ -673,16 +773,16 @@ void handle_usb_data(void)
                             if (!payload_bytes)
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                uint8_t response[3];
-                                uint16_t temp = read_word(cmd_payload[0], reverse_read_word_byte_order);
-                                response[0] = cmd_payload[0];
-                                response[1] = (temp >> 8) & 0xff;
-                                response[2] = temp & 0xff;
-                                send_usb_packet(read_data, sd_read_word, response, 3);
-                            }
+
+                            uint8_t response[3];
+                            uint16_t temp = read_word(cmd_payload[0], reverse_read_word_byte_order);
+                            response[0] = cmd_payload[0];
+                            response[1] = (temp >> 8) & 0xff;
+                            response[2] = temp & 0xff;
+                            
+                            send_usb_packet(read_data, sd_read_word, response, 3);
                             break;
                         }
                         case sd_read_block: // 0x03 - read block
@@ -690,20 +790,30 @@ void handle_usb_data(void)
                             if (!payload_bytes)
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
+
+                            uint8_t block_length = read_block(cmd_payload[0], buffer, buffer_length);
+                            uint8_t response_length = block_length + 1;
+                            uint8_t response[response_length];
+                            response[0] = cmd_payload[0];
+                            
+                            for (uint8_t i = 0; i < block_length; i++)
                             {
-                                uint8_t block_length = read_block(cmd_payload[0], buffer, buffer_length);
-                                uint8_t response_length = block_length + 1;
-                                uint8_t response[response_length];
-                                response[0] = cmd_payload[0];
-                                for (uint8_t i = 0; i < block_length; i++)
-                                {
-                                    response[1 + i] = buffer[i];
-                                }
-                                
-                                send_usb_packet(read_data, sd_read_block, response, response_length);
+                                response[1 + i] = buffer[i];
                             }
+                            
+                            send_usb_packet(read_data, sd_read_block, response, response_length);
+                            break;
+                        }
+                        case sd_read_rom_byte: // 0x04 - read rom byte
+                        {
+                            read_rom_byte();
+                            break;
+                        }
+                        case sd_read_rom_block: // 0x05 - read rom block
+                        {
+                            read_rom_block();
                             break;
                         }
                         default: // other values are not used
@@ -723,15 +833,15 @@ void handle_usb_data(void)
                             if (!payload_bytes || (payload_length < 2))
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                uint8_t result[3];
-                                result[0] = cmd_payload[0];
-                                result[1] = cmd_payload[1];
-                                result[2] = write_byte(cmd_payload[0], cmd_payload[1]);
-                                send_usb_packet(write_data, sd_write_byte, result, 3);
-                            }
+
+                            uint8_t result[3];
+                            result[0] = cmd_payload[0];
+                            result[1] = cmd_payload[1];
+                            result[2] = write_byte(cmd_payload[0], cmd_payload[1]);
+                            
+                            send_usb_packet(write_data, sd_write_byte, result, 3);
                             break;
                         }
                         case sd_write_word: // 0x02 - write word
@@ -739,16 +849,16 @@ void handle_usb_data(void)
                             if (!payload_bytes || (payload_length < 3))
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                uint8_t result[4];
-                                result[0] = cmd_payload[0];
-                                result[1] = cmd_payload[1];
-                                result[2] = cmd_payload[2];
-                                result[3] = write_word(cmd_payload[0], (cmd_payload[1] << 8) | cmd_payload[2], reverse_write_word_byte_order);
-                                send_usb_packet(write_data, sd_write_word, result, 4);
-                            }
+
+                            uint8_t result[4];
+                            result[0] = cmd_payload[0];
+                            result[1] = cmd_payload[1];
+                            result[2] = cmd_payload[2];
+                            result[3] = write_word(cmd_payload[0], (cmd_payload[1] << 8) | cmd_payload[2], reverse_write_word_byte_order);
+                            
+                            send_usb_packet(write_data, sd_write_word, result, 4);
                             break;
                         }
                         case sd_write_block: // 0x03 - write block
@@ -756,27 +866,27 @@ void handle_usb_data(void)
                             if (!payload_bytes || (payload_length < 2))
                             {
                                 send_usb_packet(ok_error, error_payload_invalid_values, err, 1);
+                                break;
                             }
-                            else
-                            {
-                                uint8_t result_length = payload_length + 1;
-                                uint8_t result[result_length];
-                                uint8_t temp_block_length = payload_length - 1;
-                                uint8_t temp_block[temp_block_length];
-                                
-                                for (uint8_t i = 0; i < result_length - 1; i++)
-                                {
-                                    result[i] = cmd_payload[i];
-                                }
 
-                                for (uint8_t i = 0; i < temp_block_length; i++)
-                                {
-                                    temp_block[i] = cmd_payload[i + 1];
-                                }
-                                
-                                result[result_length - 1] = write_block(cmd_payload[0], temp_block, temp_block_length);
-                                send_usb_packet(write_data, sd_write_block, result, result_length);
+                            uint8_t result_length = payload_length + 1;
+                            uint8_t result[result_length];
+                            uint8_t temp_block_length = payload_length - 1;
+                            uint8_t temp_block[temp_block_length];
+                            
+                            for (uint8_t i = 0; i < result_length - 1; i++)
+                            {
+                                result[i] = cmd_payload[i];
                             }
+
+                            for (uint8_t i = 0; i < temp_block_length; i++)
+                            {
+                                temp_block[i] = cmd_payload[i + 1];
+                            }
+                            
+                            result[result_length - 1] = write_block(cmd_payload[0], temp_block, temp_block_length);
+                            
+                            send_usb_packet(write_data, sd_write_block, result, result_length);
                             break;
                         }
                         default: // other values are not used
