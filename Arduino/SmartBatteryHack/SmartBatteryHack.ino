@@ -16,6 +16,8 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+// Board: Arduino Uno or Arduino Mega
+
 #include <avr/wdt.h>
 #define SDA_PORT PORTD
 #define SDA_PIN 1
@@ -27,7 +29,7 @@
 #define ManufacturerAccess          0x00
 #define RemainingCapacityAlarm      0x01
 #define RemainingTimeAlarm          0x02
-#define kBatteryMode                0x03
+#define BatteryMode                 0x03
 #define AtRate                      0x04
 #define AtRateTimeToFull            0x05
 #define AtRateTimeToEmpty           0x06
@@ -53,24 +55,10 @@
 #define SpecificationInfo           0x1a
 #define ManufactureDate             0x1b
 #define SerialNumber                0x1c
-#define Unknown_1d                  0x1d
-#define Unknown_1e                  0x1e
-#define Unknown_1f                  0x1f
 #define ManufacturerName            0x20
 #define DeviceName                  0x21
 #define DeviceChemistry             0x22
 #define ManufacturerData            0x23
-
-#define Unknown_2e                  0x2e
-
-#define Unknown_30                  0x30
-#define Unknown_31                  0x31
-#define Unknown_32                  0x32
-#define Unknown_33                  0x33
-#define Unknown_34                  0x34
-#define Unknown_35                  0x35
-#define Unknown_36                  0x36
-#define Unknown_37                  0x37
 #define Unknown_38                  0x38 // probably Cellvoltage4
 #define Unknown_39                  0x39 // probably CellVoltage3
 #define Unknown_3a                  0x3a // probably CellVoltage2
@@ -79,26 +67,19 @@
 #define CellVoltage3                0x3d
 #define CellVoltage2                0x3e
 #define CellVoltage1                0x3f
-
 #define SetROMAddress               0x40 // word write only
-#define Unknown_41                  0x41
 #define PeekROMByte                 0x42
 #define PeekROMBlock                0x43 // block read, size seems to be always 0x20 (32 bytes)
-
 #define FETControl                  0x46
-  
 #define SafetyAlert                 0x50
 #define SafetyStatus                0x51
 #define PFAlert                     0x52
 #define PFStatus                    0x53
 #define OperationStatus             0x54
 #define ChargingStatus              0x55
-#define Unknown_56                  0x56
 #define ResetData                   0x57
 #define WDResetData                 0x58
-#define Unknown_59                  0x59
 #define PackVoltage                 0x5a
-
 #define AverageVoltage              0x5d
 #define TS1Temperature              0x5e
 #define TS2Temperature              0x5f
@@ -109,13 +90,10 @@
 #define AuthenKey2                  0x64
 #define AuthenKey1                  0x65
 #define AuthenKey0                  0x66
-
-#define Unknown_70                  0x70
 #define SenseResistor               0x71
 #define TempRange                   0x72
 #define Timestamp                   0x73
 #define ManufacturerStatus          0x74
-
 #define DataFlashClass              0x77
 #define DataFlashClassSubClass1     0x78
 #define DataFlashClassSubClass2     0x79
@@ -369,7 +347,7 @@ void read_rom_byte(void)
         if (address == 0x8800) done = true;
     }
 
-    delay(200);
+    delay(100);
     send_usb_packet(ok_error, ok, ack, 1);
 }
 
@@ -414,7 +392,7 @@ void read_rom_block(void)
         if (address == 0x8800) done = true;
     }
 
-    delay(200);
+    delay(100);
     send_usb_packet(ok_error, ok, ack, 1);
 }
 
