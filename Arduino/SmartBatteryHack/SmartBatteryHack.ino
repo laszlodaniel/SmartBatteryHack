@@ -19,10 +19,20 @@
 // Board: Arduino Uno or Arduino Mega
 
 #include <avr/wdt.h>
-#define SDA_PORT PORTD
-#define SDA_PIN 1
-#define SCL_PORT PORTD
-#define SCL_PIN 0
+
+#if defined (__AVR_ATmega328P__) || defined (__AVR_ATmega328__) // Arduino Uno hardware I2C pins
+    #define SDA_PORT PORTC
+    #define SDA_PIN 4
+    #define SCL_PORT PORTC
+    #define SCL_PIN 5
+
+#elif defined (__AVR_ATmega1280__) || defined (__AVR_ATmega2560__) // Arduino Mega hardware I2C pins
+    #define SDA_PORT PORTD
+    #define SDA_PIN 0
+    #define SCL_PORT PORTD
+    #define SCL_PIN 1
+#endif
+
 #define I2C_SLOWMODE 1 // 25 kHz
 #include <SoftI2CMaster.h>
 
@@ -905,6 +915,6 @@ void setup()
 void loop()
 {
     wdt_reset(); // reset watchdog timer to 0 seconds so no accidental restart occurs
-    if (design_voltage == 0) design_voltage = read_word(0x19);
+    //if (design_voltage == 0) design_voltage = read_word(0x19);
     handle_usb_data();
 }
