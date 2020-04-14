@@ -31,8 +31,15 @@
     #define SDA_PIN 0
     #define SCL_PORT PORTD
     #define SCL_PIN 1
+
+#else // for other boards select I2C-pins here
+    #define SDA_PORT PORTC
+    #define SDA_PIN 4
+    #define SCL_PORT PORTC
+    #define SCL_PIN 5
 #endif
-#define I2C_PULLUP 1
+
+#define I2C_PULLUP 1 // enable internal pullup resistors for I2C-pins
 #define I2C_SLOWMODE 1 // 25 kHz
 #include <SoftI2CMaster.h>
 
