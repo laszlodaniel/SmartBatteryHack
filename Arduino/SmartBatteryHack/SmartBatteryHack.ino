@@ -32,7 +32,7 @@
     #define SCL_PORT PORTD
     #define SCL_PIN 1
 #endif
-
+#define I2C_PULLUP 1
 #define I2C_SLOWMODE 1 // 25 kHz
 #include <SoftI2CMaster.h>
 
