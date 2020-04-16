@@ -163,7 +163,7 @@
 #define error_payload_invalid_values            0x04
 #define error_checksum_invalid_value            0x05
 #define error_packet_timeout_occured            0x06
-// 0x06-0xFD reserved
+// 0x07-0xFD reserved
 #define error_internal                          0xFE
 #define error_fatal                             0xFF
 
