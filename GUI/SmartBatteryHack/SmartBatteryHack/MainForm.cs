@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -21,7 +21,8 @@ namespace SmartBatteryHack
         public bool DeviceFound = false;
         public List<byte> bufferlist = new List<byte>();
         public List<ushort> SMBusRegisterDumpList = new List<ushort>();
-        public ushort DesignVoltage = 0;
+        public ushort ChipID = 0;
+        public string Chip;
         public string SelectedPort = String.Empty;
 
         public byte[] HandshakeRequest = new byte[] { 0x3D, 0x00, 0x02, 0x01, 0x00, 0x03 };
@@ -387,49 +388,1429 @@ namespace SmartBatteryHack
                                             Util.UpdateTextBox(CommunicationTextBox, "[RX->] SMBus register dump (" + Util.ByteToHexString(Payload, 0, 1) + "-" + Util.ByteToHexString(Payload, 1, 2) + ")", Packet);
                                             if (Payload.Length > 2)
                                             {
-                                                SMBusRegisterDumpList.Clear();
-
-                                                for (int i = 1; i < (Payload.Length - 2); i++)
+                                            	StringBuilder value = new StringBuilder();
+												ushort current_byte=2; //current byte in payload 0:start reg 1:final reg from 2 to endding are each reg and data 
+                                                byte current_reg = 0; //current reg
+                                                byte[] data = new byte[32]; //32 bytes for byte-by-byte data of current reg
+												byte data_lenth; //if the reg data is block, the size of the string
+												string datastring; //if ASCII string block, the string of reg value
+												ushort dataword; //the value of reg value
+												if (Payload[1] >= 0x40) 
+													value.AppendLine("--CAUTIOUS! Lookup datasheet for details of Ext Reg. Value 0x1717 maybe an error when reading reg. Read it individually and dump reg 0x16 to view error code--");
+                                                for (current_reg = Payload[0]; current_reg <= Payload[1]; current_reg++)
                                                 {
-                                                    i += 2;
-                                                    SMBusRegisterDumpList.Add((ushort)((Payload[i] << 8) + Payload[i + 1]));
-                                                }
 
-                                                byte[] data = new byte[2];
-                                                StringBuilder value = new StringBuilder();
-                                                byte start_reg = Payload[0];
-                                                byte current_reg = 0;
+													switch (current_reg)
+													{
+														case 0x00: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //trun to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word with HEX format
+																value.Append("ManufacturerAccess: " + Util.ByteToHexString(data, 0, 2));
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x01: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("RemainingCapacityAlarm: " + dataword.ToString() + " mAh"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x02: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("RemainingTimeAlarm: " + dataword.ToString() + " minuets"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x03: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("BatteryMode: "); //decoding, show in BIN format
+																if ((dataword & 0x8000) == 0)
+																    value.Append("Report in mA or mAh (default). ");
+																else
+																	value.Append("Report in 10mW or 10mWh. ");
+																
+																if ((dataword & 0x4000) == 0)
+																    value.Append("Enable ChargingVoltage and ChargingCurrent broadcasts to Charger (default). ");
+																else
+																	value.Append("Disable ChargingVoltage and ChargingCurrent broadcasts to Charger. ");
+																
+																if ((dataword & 0x2000) == 0)
+																    value.Append("Enable AlarmWarning broadcasts to Host and Charger (default). ");
+																else
+																	value.Append("Disable AlarmWarning broadcasts to Host and Charger. ");
+																
+																if ((dataword & 0x80) == 0)
+																    value.Append("Battery OK. ");
+																else
+																	value.Append("Capacity Re-Learn Cycle Requested. ");
+																
+																if ((dataword & 0x2) == 0)
+																    value.Append("Primary or Secondary Battery Not Supported. ");
+																else if ((dataword & 0x200) == 0)
+																	    value.Append("Battery in secondary role (default). ");
+																	 else
+																		value.Append("Battery in primary role. ");
+																
+																if ((dataword & 0x1) == 0)
+																    value.Append("Internal Charge Controller Not Supported.");
+																else if ((dataword & 0x100) == 0)
+																		value.Append("Internal Charge Control Disabled (default).");
+																	 else
+																		value.Append("Internal Charge Control Enabled.");
+																
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x04: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AtRate: " + ((short)dataword).ToString() + " mAh"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x05: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AtRateTimeToFull: " + dataword.ToString() + " minuets"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x06: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AtRateTimeToEmpty: " + dataword.ToString() + " minuets"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x07: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AtRateOK: " + Convert.ToBoolean(dataword)); //decoding, show in Boolean format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x08: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Temperature: " + (dataword/10.0-273).ToString() + " °C"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x09: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Voltage: " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x0A: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Current: " + dataword.ToString() + " mA"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x0B: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AverageCurrent: " + dataword.ToString() + " mA"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x0C: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("MaxError: " + dataword.ToString() + "%"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x0D: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("RelativeStateOfCharge: " + dataword.ToString() + "%"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x0E: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AbsoluteStateOfCharge: " + dataword.ToString() + "%"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x0F: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("RemainingCapacity: " + dataword.ToString() + " mAh"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x10: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("FullChargeCapacity: " + dataword.ToString() + " mAh"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x11: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("RunTimeToEmpty: " + dataword.ToString() + " minuets"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x12: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AverageTimeToEmpty: " + dataword.ToString() + " minuets"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x13: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("AverageTimeToFull: " + dataword.ToString() + " minuets"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x14: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("ChargingCurrent: " + dataword.ToString() + " mA"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x15: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("ChargingVoltage: " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x16: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("BatteryStatus: "); //decoding, show in DEC format
+																if ((dataword & 0xDB00) != 0) value.Append("ALARMS: ");
+																if ((dataword & 0x8000) != 0) value.Append("OVER_CHARGED ");
+																if ((dataword & 0x4000) != 0) value.Append("TERMINATE_CHARGE ");
+																if ((dataword & 0x1000) != 0) value.Append("OVER_TEMP ");
+																if ((dataword & 0x800) != 0) value.Append("TERMINATE_DISCHARGE ");
+																if ((dataword & 0x200) != 0) value.Append("REMAINING_CAPACITY ");
+																if ((dataword & 0x100) != 0) value.Append("REMAINING_TIME ");
+																if ((dataword & 0xF0) != 0) value.Append("STATUS: ");
+																if ((dataword & 0x80) != 0) value.Append("INITIALIZED ");
+																if ((dataword & 0x40) != 0) value.Append("DISCHARGING ");
+																if ((dataword & 0x20) != 0) value.Append("FULLY_CHARGED ");
+																if ((dataword & 0x10) != 0) value.Append("FULLY_DISCHARGED ");
+																if ((dataword & 0xF) != 0) value.Append("ERRORS: ");
+																switch (dataword & 0xF)
+																{
+																	case 0x7: value.Append("UnknownError "); break;
+																	case 0x6: value.Append("BadSize "); break;
+																	case 0x5: value.Append("Overflow/Underflow "); break;
+																	case 0x4: value.Append("AccessDenied "); break;
+																	case 0x3: value.Append("UnsupportedCommand "); break;
+																	case 0x2: value.Append("ReservedCommand "); break;
+																	case 0x1: value.Append("Busy "); break;
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x17: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("CycleCount: " + dataword.ToString() + " Cycles"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x18: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("DesignCapacity: " + dataword.ToString() + " mAh"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x19: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("DesignVoltage: " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x1A: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("SpecificationInfo: "  ); //decoding, show in DEC format
+																switch (dataword & 0xFF)
+																{
+																	case 0x10: value.Append("Smart Battery Spec 1.0"); break;
+																	case 0x21: value.Append("Smart Battery Spec 1.1 without PEC"); break;
+																	case 0x31: value.Append("Smart Battery Spec 1.1 with PEC"); break;
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x1B: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																int year = 1980 + (dataword >> 9 & 0x7f); int month = dataword >> 5 & 0xf; int day = dataword & 0x1f;
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("ManufactureDate: " + "Y" + year + "M" + month + "D"+ day ); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x1C: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("SerialNumber: " + dataword.ToString()); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x1D: //HEX word
+															goto case 0x3B;
+														case 0x1E: //HEX word
+															goto case 0x3B;
+														case 0x1F: //HEX word
+															goto case 0x3B;
+														case 0x20: //ASCII string
+															if(current_reg == Payload[current_byte])
+															{
+																data_lenth = Payload[current_byte + 1]; //get register block data size
+																Array.Copy(Payload, current_byte + 2, data, 0, data_lenth); //get register data
+																datastring = Encoding.ASCII.GetString(data, 0, data_lenth); //to ASCII string
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data_lenth) + " // "); //show the block in HEX format
+																value.Append("ManufacturerName: " + datastring); //decoding, show in ASCII string format
+																current_byte += (ushort)(2 + data_lenth); //move index to next reg
+															}
+															break;
+														case 0x21: //ASCII string
+															if(current_reg == Payload[current_byte])
+															{
+																data_lenth = Payload[current_byte+1]; //get register block data size
+																Array.Copy(Payload, current_byte+2, data, 0, data_lenth); //get register data
+																datastring = Encoding.ASCII.GetString(data, 0, data_lenth); //to ASCII string
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data_lenth) + " // "); //show the block in HEX format
+																value.Append("DeviceName: " + datastring); //decoding, show in ASCII string format
+																current_byte += (ushort)(2 + data_lenth); //move index to next reg
+															}
+																break;
+														case 0x22: //ASCII string
+															if(current_reg == Payload[current_byte])
+															{
+																data_lenth = Payload[current_byte+1]; //get register block data size
+																Array.Copy(Payload, current_byte+2, data, 0, data_lenth); //get register data
+																datastring = Encoding.ASCII.GetString(data, 0, data_lenth); //to ASCII string
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data_lenth) + " // "); //show the block in HEX format
+																value.Append("DeviceChemisty: " + datastring); //decoding, show in ASCII string format
+																current_byte += (ushort)(2 + data_lenth); //move index to next reg
+															}
+															break;
+														case 0x23: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																data_lenth = Payload[current_byte+1]; //get register block data size
+																Array.Copy(Payload, current_byte+2, data, 0, data_lenth); //get register data
+																datastring = Util.ByteToHexString(data, 0, data_lenth); //to HEX string
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data_lenth) + " // "); //show the block in HEX format
+																value.Append("ManufacturerData: " + datastring); //decoding, show in HEX string format
+																current_byte += (ushort)(2 + data_lenth); //move index to next reg
+															}
+															break;
+														case 0x24: //HEX word
+															goto case 0x3B;
+														case 0x25: //HEX word
+															goto case 0x3B;
+														case 0x26: //HEX word
+															goto case 0x3B;
+														case 0x27: //HEX word
+															goto case 0x3B;
+														case 0x28: //HEX word
+															goto case 0x3B;
+														case 0x29: //HEX word
+															goto case 0x3B;
+														case 0x2A: //HEX word
+															goto case 0x3B;
+														case 0x2B: //HEX word
+															goto case 0x3B;
+														case 0x2C: //HEX word
+															goto case 0x3B;
+														case 0x2D: //HEX word
+															goto case 0x3B;
+														case 0x2E: //HEX word
+															goto case 0x3B;
+														case 0x2F: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("OptionalMfgFunction5: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: Pack Status and Pack Configuration: ");
+																	if ((dataword & 0x80) != 0) value.Append("System present. "); else value.Append("System unpresent. ");
+																	if ((dataword & 0x40) != 0) value.Append("V≤EndDischargeVoltage2. "); else value.Append("V>EndDischargeVoltage2. ");
+																	if ((dataword & 0x20) != 0) value.Append("Sealed. "); else value.Append("Unsealed. "); 
+																	if ((dataword & 0x10) != 0) value.Append("Discharge cycle valid for an FCC update." ); else value.Append("Discharge cycle invalid for an FCC update. "); 
+																	if ((dataword & 0x8) != 0) value.Append("AFE com failed. "); else value.Append("AFE com OK. ");
+																	if ((dataword & 0x4) != 0) value.Append("PF Flag set. "); else value.Append("PF Flag clear. ");
+																	if ((dataword & 0x2) != 0) value.Append("CellVoltageOverVoltage. ");
+																		else if ((dataword & 0x1) != 0) value.Append("CellVoltageUnderVoltage. ");
+																			else value.Append("CellVoltage OK. ");
+																}
+																else
+																	value.Append("BQ20ZXX: Authenticate. Read " + data[1] + "-byte-block manually. ");
 
-                                                for (int i = 0; i < SMBusRegisterDumpList.Count; i++)
-                                                {
-                                                    data[0] = (byte)(SMBusRegisterDumpList[i] >> 8 & 0xFF);
-                                                    data[1] = (byte)(SMBusRegisterDumpList[i] & 0xFF);
-                                                    current_reg = (byte)(i + start_reg);
-                                                    value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, data.Length) + " // ");
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x30: //HEX word
+															goto case 0x3B;
+														case 0x31: //HEX word
+															goto case 0x3B;
+														case 0x32: //HEX word
+															goto case 0x3B;
+														case 0x33: //HEX word
+															goto case 0x3B;
+														case 0x34: //HEX word
+															goto case 0x3B;
+														case 0x35: //HEX word
+															goto case 0x3B;
+														case 0x36: //HEX word
+															goto case 0x3B;
+														case 0x37: //HEX word
+															goto case 0x3B;
+														case 0x38: //HEX word
+															goto case 0x3B;
+														case 0x39: //HEX word
+															goto case 0x3B;
+														case 0x3A: //HEX word
+															goto case 0x3B;
+														case 0x3B: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Reserved: " + dataword.ToString()); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x3C: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("OptionalMfgFunction4 (VCell4 for BQ): " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x3D: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("OptionalMfgFunction3 (VCell3 for BQ): " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x3E: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("OptionalMfgFunction2 (VCell2 for BQ): " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x3F: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("OptionalMfgFunction1 (VCell1 for BQ): " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														
+														case 0x45: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: VPack: " + dataword + " mV");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: AFEData. Read " + data[1] + "-byte-block manually. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x46: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: AFEData: ");
+																	if ((dataword & 0x2000) != 0) value.Append("ZVCLMP "); 
+																	if ((dataword & 0x1000) != 0) value.Append("SLEEPDET ");
+																	if ((dataword & 0x800) != 0) value.Append("WDF ");
+																	if ((dataword & 0x400) != 0) value.Append("OL ");
+																	if ((dataword & 0x200) != 0) value.Append("SCCHG ");
+																	if ((dataword & 0x100) != 0) value.Append("SCDSG ");
+																	value.Append("For full message dump block manually.");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: FETControl: ");
+																	if ((dataword & 0x10) != 0) value.Append("AFE GPOD Enabled. "); else value.Append("AFE GPOD Disabled. "); 
+																	if ((dataword & 0x8) != 0) value.Append("ZVCHG FET On. "); else value.Append("ZVCHG FET Off. ");
+																	if ((dataword & 0x4) != 0) value.Append("CHG FET On. "); else value.Append("CHG FET Off. ");
+																	if ((dataword & 0x2) != 0) value.Append("DSG FET On. "); else value.Append("DSG FET Off. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x4F: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: StateOfHealth: " + (dataword & 0xff).ToString() + "% "); //decoding, show in DEC format bq20z655/z40/z45
+																	if ((dataword & 0x400) != 0) value.Append("Cell Life Limit. ");
+																	if ((dataword & 0x200) != 0) value.Append("Deterioration Warning. ");
+																	if ((dataword & 0x100) != 0) value.Append("Deterioration Fault. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
 
-                                                    switch (current_reg)
-                                                    {
-                                                        case 0x00:
-                                                            value.Append("ManufacturerAccess: " + Util.ByteToHexString(data, 0, data.Length));
-                                                            break;
-                                                        case 0x01:
-                                                            if (DesignVoltage > 0) value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh = " + Math.Round((DesignVoltage / 1000D) * SMBusRegisterDumpList[i]).ToString("0") + " mWh");
-                                                            else value.Append("RemainingCapacityAlarm: " + SMBusRegisterDumpList[i].ToString() + " mAh");
-                                                            break;
-                                                        case 0x02:
-                                                            value.Append("RemainingTimeAlarm: " + SMBusRegisterDumpList[i].ToString() + " minutes");
-                                                            break;
-                                                        case 0x03:
-                                                            value.Append("BatteryMode: " + "N/A");
-                                                            break;
-                                                        default:
-                                                            value.Append(Util.ByteToHexString(data, 0, data.Length));
-                                                            break;
-                                                    }
+															}
+															break;
+														case 0x50: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: Word, Writing a byte to dataflash (address ≤ 0xff).");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: SafetyAlert: "); //decoding, show in DEC format
+																	if ((dataword & 0x8000) != 0) value.Append("Discharge OT. ");
+																	if ((dataword & 0x4000) != 0) value.Append("Charge OT. ");
+																	if ((dataword & 0x2000) != 0) value.Append("Discharge OC. ");
+																	if ((dataword & 0x1000) != 0) value.Append("Charge OC. ");
+																	if ((dataword & 0x800) != 0) value.Append("Tier-2 Discharge OC. ");
+																	if ((dataword & 0x400) != 0) value.Append("Tier-2 Charge OC. ");
+																	if ((dataword & 0x200) != 0) value.Append("Pack UV. ");
+																	if ((dataword & 0x100) != 0) value.Append("Pack OV. ");
+																	if ((dataword & 0x80) != 0) value.Append("Cell UV. ");
+																	if ((dataword & 0x40) != 0) value.Append("Cell OV. ");
+																	if ((dataword & 0x20) != 0) value.Append("PF. ");
+																	if ((dataword & 0x10) != 0) value.Append("Host WD. ");
+																	if ((dataword & 0x8) != 0) value.Append("AFE WD. ");
+																	if ((dataword & 0x4) != 0) value.Append("Discharge OC. ");
+																	if ((dataword & 0x2) != 0) value.Append("Charge SC. ");
+																	if ((dataword & 0x1) != 0) value.Append("Discharge SC. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x51: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: Word, Setting the address (≤ 0xff) of the dataflash byte to read. ");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: SafetyStatus: "); //decoding, show in DEC format
+																	if ((dataword & 0x8000) != 0) value.Append("Discharge OT. ");
+																	if ((dataword & 0x4000) != 0) value.Append("Charge OT. ");
+																	if ((dataword & 0x2000) != 0) value.Append("Discharge OC. ");
+																	if ((dataword & 0x1000) != 0) value.Append("Charge OC. ");
+																	if ((dataword & 0x800) != 0) value.Append("Tier-2 Discharge OC. ");
+																	if ((dataword & 0x400) != 0) value.Append("Tier-2 Charge OC. ");
+																	if ((dataword & 0x200) != 0) value.Append("Pack UV. ");
+																	if ((dataword & 0x100) != 0) value.Append("Pack OV. ");
+																	if ((dataword & 0x80) != 0) value.Append("Cell UV. ");
+																	if ((dataword & 0x40) != 0) value.Append("Cell OV. ");
+																	if ((dataword & 0x20) != 0) value.Append("PF. ");
+																	if ((dataword & 0x10) != 0) value.Append("Host WD. ");
+																	if ((dataword & 0x8) != 0) value.Append("AFE WD. ");
+																	if ((dataword & 0x4) != 0) value.Append("Discharge OC. ");
+																	if ((dataword & 0x2) != 0) value.Append("Charge SC. ");
+																	if ((dataword & 0x1) != 0) value.Append("Discharge SC. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x52: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: Reading a byte from dataflash. ");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: PFAlert: "); //decoding, show in DEC format
+																	if ((dataword & 0x8000) != 0) value.Append("Fuse Blow. ");
+																	if ((dataword & 0x4000) != 0) value.Append("PF VSHUT. ");
+																	if ((dataword & 0x2000) != 0) value.Append("Safety UV. ");
+																	if ((dataword & 0x1000) != 0) value.Append("Open Thermistor. ");
+																	if ((dataword & 0x800) != 0) value.Append("Discharge Safety OC. ");
+																	if ((dataword & 0x400) != 0) value.Append("Charge Safty OC. ");
+																	if ((dataword & 0x200) != 0) value.Append("Periodic AFE Com Fault. ");
+																	if ((dataword & 0x100) != 0) value.Append("Permanent AFE Com Fault. ");
+																	if ((dataword & 0x80) != 0) value.Append("Data Flash Fault. ");
+																	if ((dataword & 0x40) != 0) value.Append("Discharge-FET-Failure. ");
+																	if ((dataword & 0x20) != 0) value.Append("Charge-FET-Failure. ");
+																	if ((dataword & 0x10) != 0) value.Append("Cell-Imbalance. ");
+																	if ((dataword & 0x8) != 0) value.Append("Discharge Safety OT. ");
+																	if ((dataword & 0x4) != 0) value.Append("Charge Safety OT. ");
+																	if ((dataword & 0x2) != 0) value.Append("Safety OV. ");
+																	if ((dataword & 0x1) != 0) value.Append("External PF Input. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x53: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: PFStatus: "); //decoding, show in DEC format
+																	if ((dataword & 0x8000) != 0) value.Append("Fuse Blow. ");
+																	if ((dataword & 0x4000) != 0) value.Append("PF VSHUT. ");
+																	if ((dataword & 0x2000) != 0) value.Append("Safety UV. ");
+																	if ((dataword & 0x1000) != 0) value.Append("Open Thermistor. ");
+																	if ((dataword & 0x800) != 0) value.Append("Discharge Safety OC. ");
+																	if ((dataword & 0x400) != 0) value.Append("Charge Safty OC. ");
+																	if ((dataword & 0x200) != 0) value.Append("Periodic AFE Com Fault. ");
+																	if ((dataword & 0x100) != 0) value.Append("Permanent AFE Com Fault. ");
+																	if ((dataword & 0x80) != 0) value.Append("Data Flash Fault. ");
+																	if ((dataword & 0x40) != 0) value.Append("Discharge-FET-Failure. ");
+																	if ((dataword & 0x20) != 0) value.Append("Charge-FET-Failure. ");
+																	if ((dataword & 0x10) != 0) value.Append("Cell-Imbalance. ");
+																	if ((dataword & 0x8) != 0) value.Append("Discharge Safety OT. ");
+																	if ((dataword & 0x4) != 0) value.Append("Charge Safety OT. ");
+																	if ((dataword & 0x2) != 0) value.Append("Safety OV. ");
+																	if ((dataword & 0x1) != 0) value.Append("External PF Input. ");
+																}
+																else
+																{
+																}
+																
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x54: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: OperationStatus: "); //decoding, show in DEC format
+																	if ((dataword & 0x8000) != 0) value.Append("System Present. ");
+																	if ((dataword & 0x4000) == 0) value.Append("FULL ACCESS Mode. ");
+																	if ((dataword & 0x2000) != 0) value.Append("SEALED Mode. ");
+																	if ((dataword & 0x1000) != 0) value.Append("DataFlash CheckSum Value Generated. ");
+																	if ((dataword & 0x800) != 0) value.Append("Bit11. ");
+																	if ((dataword & 0x400) != 0) value.Append("Load Mode. ");
+																	if ((dataword & 0x200) != 0) value.Append("Bit09. ");
+																	if ((dataword & 0x100) != 0) value.Append("Bit08. ");
+																	if ((dataword & 0x80) != 0) value.Append("WAKE Mode. ");
+																	if ((dataword & 0x40) != 0) value.Append("Discharging or Relaxation Mode. ");
+																	if ((dataword & 0x20) != 0) value.Append("Discharge Fault. ");
+																	if ((dataword & 0x10) != 0) value.Append("Discharge Disabled for Current Issue. ");
+																	if ((dataword & 0x8) != 0) value.Append("Discharge Inhibited for High Temp. ");
+																	if ((dataword & 0x4) != 0) value.Append("Resistance Update Disabled. ");
+																	if ((dataword & 0x2) != 0) value.Append("VOK for Qmax Update. ");
+																	if ((dataword & 0x1) != 0) value.Append("Qmax Update Enabled. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x55: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: ChargingStatus: "); //decoding, show in DEC format
+																	if ((dataword & 0x8000) != 0) value.Append("Charging disabled. ");
+																	if ((dataword & 0x4000) == 0) value.Append("Charging suspended. ");
+																	if ((dataword & 0x2000) != 0) value.Append("Precharging. ");
+																	if ((dataword & 0x1000) != 0) value.Append("Maintenance charging. ");
+																	if ((dataword & 0x800) != 0) value.Append("Bit11. ");
+																	if ((dataword & 0x400) != 0) value.Append("Bit10. ");
+																	if ((dataword & 0x200) != 0) value.Append("Bit09. ");
+																	if ((dataword & 0x100) != 0) value.Append("Bit08. ");
+																	if ((dataword & 0x80) != 0) value.Append("Bit07. ");
+																	if ((dataword & 0x40) != 0) value.Append("Cell balancing. ");
+																	if ((dataword & 0x20) != 0) value.Append("Discharge Fault. ");
+																	if ((dataword & 0x10) != 0) value.Append("Bit04. ");
+																	if ((dataword & 0x8) != 0) value.Append("Bit03. ");
+																	if ((dataword & 0x4) != 0) value.Append("Bit02. ");
+																	if ((dataword & 0x2) != 0) value.Append("Overcharge fault. ");
+																	if ((dataword & 0x1) != 0) value.Append("Bit00. ");
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x57: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: ResetData: Full Resets: " + data[0] + " Partial Resets: " + data[1]); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x58: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: WDResetData: Watchdog resets :" + dataword + "times"); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x59:
+															goto case 0x5B;
+														case 0x5A: //HEX word
+															goto case 0x5B;
+														case 0x5B:
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x5C:
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("2084"))
+																{
+																	value.Append("BQ2084: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x5D: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: AverageVoltage: " + dataword.ToString() + " mV"); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x5E: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z4") || Chip.Contains("20Z6"))
+																{
+																	value.Append("BQ20Z4X/6X: TS1Temperature: " + ((short)dataword).ToString() + " °C"); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x5F: //HEX word
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z4") || Chip.Contains("20Z6"))
+																{
+																	value.Append("BQ20Z4X/6X: TS2Temperature: " + ((short)dataword).ToString() + " °C"); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x60: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: UnSealKey: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x61: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: FullAccessKey: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x62: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: PFKey: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x63: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: AuthenKey3: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x64: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: AuthenKey2: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x65: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: AuthenKey1: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x66: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: AuthenKey0: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x67: //HEX string
+															goto case 0x6E;
+														case 0x68: //HEX string
+															goto case 0x6E;
+														case 0x69: //HEX string
+															goto case 0x6E;
+														case 0x6A: //HEX string
+															goto case 0x6E;
+														case 0x6B: //HEX string
+															goto case 0x6E;
+														case 0x6C: //HEX string
+															goto case 0x6E;
+														case 0x6D: //HEX string
+															goto case 0x6E;
+														case 0x6E: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																	value.Append("BQ208X: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x6F: //HEX string
+															goto case 0x73;
+														case 0x70: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("2084"))
+																{
+																	value.Append("BQ2084: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: ManufacturerInfo: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x71: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("2084"))
+																{
+																	value.Append("BQ2084: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: SenseResistor: " + dataword.ToString() + " µΩ"); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x72: //HEX string
+														goto case 0x73;
+														case 0x73: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("2084"))
+																{
+																	value.Append("BQ2084: " + data[1] + " bytes Reads/Writes data flash");
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x77: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassID: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x78: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage1: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x79: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage2: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x7A: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage3: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x7B: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage4: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x7C: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage5: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x7D: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage6: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x7E: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage7: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														case 0x7F: //HEX string
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																if (Chip.Contains("208"))
+																{
+																}
+																else if (Chip.Contains("20Z"))
+																{
+																	value.Append("BQ20ZXX: DataFlashSubClassPage8: Read " + data[1] + "-byte-block manually. "); //decoding, show in DEC format
+																}
+																else
+																{
+																}
+																current_byte += 3; //move index to next reg
+															}
+															break;
+														default:
+															if(current_reg == Payload[current_byte])
+															{
+																Array.Copy(Payload, current_byte+1, data, 0, 2); //get register data
+																dataword = (ushort)(data[0]<<8 | data[1]); //turn to a word
+																value.Append("[" + Util.ByteToHexString(new byte[] { current_reg }, 0, 1) + "]: " + Util.ByteToHexString(data, 0, 2) + " // "); //show the word in HEX format
+																value.Append("Ext_CMD: " + "HEX_" + Convert.ToString(dataword, 16).PadLeft(4, '0') + " BIN_" + Convert.ToString(data[0], 2).PadLeft(8,'0') + '_' + Convert.ToString(data[1], 2).PadLeft(8,'0')  + " DEC_" + dataword + " Or a " + data[1] + "-byte block. "); //decoding, show in BIN HEX DEC format
+																current_byte += 3; //move index to next reg
+															}
+															break;
 
-                                                    if (i != (SMBusRegisterDumpList.Count - 1)) value.Append(Environment.NewLine);
-                                                }
-
+													}
+												if (current_reg != Payload[1]) value.Append(Environment.NewLine);
+												if (current_reg == 0xFF) break; // (0xff)++ will be 0x00 not ending loop
+												}
                                                 Util.UpdateTextBox(CommunicationTextBox, "[INFO] SMBus register dump details (" + Util.ByteToHexString(Payload, 0, 1) + "-" + Util.ByteToHexString(Payload, 1, 2) + "):" + Environment.NewLine + value.ToString(), null);
                                             }
                                             break;
@@ -457,9 +1838,25 @@ namespace SmartBatteryHack
                                                 else if ((Payload[0] & 0x03) == 2) reverse = "reverse write";
                                                 else if ((Payload[0] & 0x03) == 3) reverse = "reverse read/write";
                                                 else reverse = "unknown";
-                                                DesignVoltage = (ushort)((Payload[1] << 8) + Payload[2]);
+                                                ushort data;
+                                                data = (ushort)((Payload[1] << 8) + Payload[2]);
                                                 Util.UpdateTextBox(CommunicationTextBox, "[INFO] Word byte-order: " + reverse, null);
-                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Design voltage: " + (DesignVoltage / 1000D).ToString("0.0") + " V", null);
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Design voltage: " + ((ushort)((Payload[1] << 8) | Payload[2]) / 1000D).ToString("0.0") + " V " + "Design capacity: " + ((ushort)(Payload[3] << 8) | Payload[4]) + " mAH", null);
+                                                ChipID = (ushort)((Payload[5] << 8) + Payload[6]);
+                                                
+                                                switch (ChipID) 
+                                                {
+                                                		case 0x0823: Chip = "BQ2083"; break;
+                                                		case 0x0824: Chip = "BQ2084"; break;
+                                                		case 0x0400: Chip = "BQ20Z4X"; break;
+                                                		case 0x0600: Chip = "BQ20Z6X"; break;
+                                                		case 0x0700: Chip = "BQ20Z7X"; break;
+                                                		case 0x0800: Chip = "BQ20Z80"; break;
+                                                		case 0x0900: Chip = "BQ20Z9X/30XX"; break;
+                                                		default: Chip = "0x" + Convert.ToString(ChipID, 16).PadLeft(4, '0'); break;
+                                                }
+                                                
+                                                Util.UpdateTextBox(CommunicationTextBox, "[INFO] Chip: " + Chip + " Firmware ver " + Convert.ToString(Payload[7],16) + '.' + Convert.ToString(Payload[8], 16), null);
                                             }
                                             break;
                                         case 0x02: // select smbus address
