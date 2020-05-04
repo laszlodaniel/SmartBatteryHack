@@ -43,8 +43,8 @@
 #define I2C_SLOWMODE 1 // 25 kHz
 #include <SoftI2CMaster.h>
 
-#define BQ208X
-//#define BQ20ZXX
+//#define BQ208X
+
 
 #define ManufacturerAccess          0x00
 #define RemainingCapacityAlarm      0x01
@@ -214,7 +214,7 @@ bool reverse_read_word_byte_order = true;
 bool reverse_write_word_byte_order = true;
 uint8_t smbus_reg_start = 0x00;
 uint8_t smbus_reg_end = 0xFF;
-//uint16_t data = 0;
+
 
 // Packet related variables
 uint8_t command_timeout = 100; // milliseconds

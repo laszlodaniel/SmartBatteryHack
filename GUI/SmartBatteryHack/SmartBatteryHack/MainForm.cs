@@ -1838,11 +1838,9 @@ namespace SmartBatteryHack
                                                 else if ((Payload[0] & 0x03) == 2) reverse = "reverse write";
                                                 else if ((Payload[0] & 0x03) == 3) reverse = "reverse read/write";
                                                 else reverse = "unknown";
-                                                ushort data;
-                                                data = (ushort)((Payload[1] << 8) + Payload[2]);
                                                 Util.UpdateTextBox(CommunicationTextBox, "[INFO] Word byte-order: " + reverse, null);
                                                 Util.UpdateTextBox(CommunicationTextBox, "[INFO] Design voltage: " + ((ushort)((Payload[1] << 8) | Payload[2]) / 1000D).ToString("0.0") + " V " + "Design capacity: " + ((ushort)(Payload[3] << 8) | Payload[4]) + " mAH", null);
-                                                ChipID = (ushort)((Payload[5] << 8) + Payload[6]);
+                                                ChipID = (ushort)((Payload[5] << 8) | Payload[6]);
                                                 
                                                 switch (ChipID) 
                                                 {
