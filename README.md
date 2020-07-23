@@ -1,5 +1,5 @@
 # SmartBatteryHack
-This is a hacking tool for smart batteries using SMBus. Originally written for a Dell J1KND battery that uses a BQ8050 fuel gauge IC. The Sanyo firmware in it is hard to understand.
+This is a hacking tool for smart batteries using SMBus. Originally written for a Dell J1KND battery that uses a [BQ8050](Datasheets/BQ8050_datasheet.pdf) fuel gauge IC. The Sanyo firmware in it is hard to understand.
 
 **Arduino** folder contains the source code for an Uno/Mega which acts as an interface between the battery and an external computer. The I2C pins are connected to the smart battery's SDA/SCL pins with pullup resistors (4.7kOhm to 5V). The battery's ground pin has to be connected to the Uno/Mega's ground pin. Additionally the battery's "system present" pin may need to be grounded too (through a 100-1000 Ohm resistor). You need to install the SoftI2CMaster library to be able to use this sketch.
 
