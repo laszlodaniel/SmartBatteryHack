@@ -19,32 +19,9 @@
 // Board: Arduino Uno or Arduino Mega
 
 #include <avr/wdt.h>
-
-#if defined (__AVR_ATmega328P__) || defined (__AVR_ATmega328__) // Arduino Uno hardware I2C pins
-    #define SDA_PORT PORTC
-    #define SDA_PIN 4
-    #define SCL_PORT PORTC
-    #define SCL_PIN 5
-
-#elif defined (__AVR_ATmega1280__) || defined (__AVR_ATmega2560__) // Arduino Mega hardware I2C pins
-    #define SDA_PORT PORTD
-    #define SDA_PIN 0
-    #define SCL_PORT PORTD
-    #define SCL_PIN 1
-
-#else // for other boards select I2C-pins here
-    #define SDA_PORT PORTC
-    #define SDA_PIN 4
-    #define SCL_PORT PORTC
-    #define SCL_PIN 5
-#endif
-
-#define I2C_PULLUP 1 // enable internal pullup resistors for I2C-pins
-#define I2C_SLOWMODE 1 // 25 kHz
-#include <SoftI2CMaster.h>
+#include <Wire.h>
 
 //#define BQ208X
-
 
 #define ManufacturerAccess          0x00
 #define RemainingCapacityAlarm      0x01
@@ -227,81 +204,85 @@ uint8_t ret[1]; // general array to store arbitrary bytes
 
 uint8_t read_byte(uint8_t reg)
 {
-    i2c_start((sb_address << 1) | I2C_WRITE);
-    i2c_write(reg);
-    i2c_rep_start((sb_address << 1) | I2C_READ);
-    uint8_t ret = i2c_read(true);
-    i2c_stop();
-    return ret;
+    Wire.beginTransmission(sb_address);
+    Wire.write(reg);
+    Wire.requestFrom(sb_address, 1, true);
+    uint8_t value = Wire.read();
+    Wire.endTransmission();
+    return value;
 }
 
 uint8_t write_byte(uint8_t reg, uint8_t data)
 {
-    i2c_start((sb_address << 1) | I2C_WRITE);
-    i2c_write(reg);
-    i2c_rep_start((sb_address << 1) | I2C_WRITE);
-    uint8_t ret = i2c_write(data);
-    i2c_stop();
-    return ret; // number of bytes written
+    Wire.beginTransmission(sb_address);
+    Wire.write(reg);
+    Wire.write(data);
+    Wire.endTransmission();
+    return 1; // number of bytes written
 }
 
 uint16_t read_word(uint8_t reg, bool reverse = true)
 {
-    i2c_start((sb_address << 1) | I2C_WRITE);
-    i2c_write(reg);
-    i2c_rep_start((sb_address << 1) | I2C_READ);
-    uint8_t b1 = i2c_read(false);
-    uint8_t b2 = i2c_read(true);
-    i2c_stop();
+    Wire.beginTransmission(sb_address);
+    Wire.write(reg);
+    Wire.requestFrom(sb_address, 2, true);
+    uint8_t b1 = Wire.read();
+    uint8_t b2 = Wire.read();
+    Wire.endTransmission();
     if (!reverse) return ((b1 << 8) | b2);
     else return ((b2 << 8) | b1);
 }
 
-uint16_t write_word(uint8_t reg, uint16_t data, bool reverse = true)
+uint8_t write_word(uint8_t reg, uint16_t data, bool reverse = true)
 {
-    i2c_start((sb_address << 1) | I2C_WRITE);
-    i2c_write(reg);
-    i2c_rep_start((sb_address << 1) | I2C_WRITE);
+    Wire.beginTransmission(sb_address);
+    Wire.write(reg);
+
     if (reverse)
     {
-        i2c_write(data & 0xFF);
-        i2c_write((data >> 8) & 0xFF);
+        Wire.write(data & 0xFF);
+        Wire.write((data >> 8) & 0xFF);
     }
     else
     {
-        i2c_write((data >> 8) & 0xFF);
-        i2c_write(data & 0xFF);
+        Wire.write((data >> 8) & 0xFF);
+        Wire.write(data & 0xFF);
     }
-    i2c_stop();
-    return 2;
+
+    Wire.endTransmission();
+    return 2; // number of bytes written
 }
 
 uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length)
 {
-    i2c_start((sb_address << 1) | I2C_WRITE);
-    i2c_write(reg);
-    i2c_rep_start((sb_address << 1) | I2C_READ);
-    uint8_t read_length = i2c_read(false); // first byte is length
-    block_buffer[0] = read_length;
-    for (uint16_t i = 0; i < read_length - 1; i++) // last byte needs to be nack'd
+    Wire.beginTransmission(sb_address);
+    Wire.write(reg);
+    Wire.requestFrom(sb_address, 1, true);
+    uint8_t length = Wire.read();
+    block_buffer[0] = length;
+    Wire.requestFrom(sb_address, length + 1, true);
+    Wire.read(); // read first length byte into oblivion
+    
+    for (uint16_t i = 0; i < length; i++)
     {
-        block_buffer[1 + i] = i2c_read(false);
+        block_buffer[1 + i] = Wire.read();
     }
-    block_buffer[read_length] = i2c_read(true); // this will nack the last byte and store it in i's num_bytes-1 address.
-    i2c_stop();
-    return (read_length + 1);
+    
+    Wire.endTransmission();
+    return length + 1;
 }
 
 uint16_t write_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length)
 {
-    i2c_start((sb_address << 1) | I2C_WRITE);
-    i2c_write(reg);
-    i2c_rep_start((sb_address << 1) | I2C_WRITE);
+    Wire.beginTransmission(sb_address);
+    Wire.write(reg);
+
     for (uint16_t i = 0; i < block_buffer_length; i++)
     {
-         i2c_write(block_buffer[i]);
+         Wire.write(block_buffer[i]);
     }
-    i2c_stop();
+    
+    Wire.endTransmission();
     return block_buffer_length;
 }
 
@@ -311,14 +292,15 @@ void scan_smbus_address(void)
     
     for (uint8_t i = 3; i < 120; i++)
     {
-        bool ack = i2c_start((i << 1) | I2C_WRITE); 
-        if (ack)
+        Wire.beginTransmission(i);
+        uint8_t error = Wire.endTransmission();
+
+        if (error == 0)
         {
             scan_smbus_address_result[scan_smbus_address_result_ptr] = i;
             scan_smbus_address_result_ptr++;
             if (scan_smbus_address_result_ptr > 7) scan_smbus_address_result_ptr = 7;
         }
-        i2c_stop();
     }
 
     if (scan_smbus_address_result_ptr > 0) send_usb_packet(status, sd_scan_smbus_address, scan_smbus_address_result, scan_smbus_address_result_ptr);
@@ -972,7 +954,10 @@ void handle_usb_data(void)
 
 void setup()
 {
-    i2c_init();
+    Wire.begin(sb_address);
+    TWBR = 78; // 25 kHz I2C
+    TWSR |= bit(TWPS0); // change prescaler
+
     Serial.begin(250000);
     wdt_enable(WDTO_4S); // reset program if it hangs for more than 4 seconds
     send_usb_packet(reset, 0x01, ack, 1); // device ready
@@ -981,6 +966,5 @@ void setup()
 void loop()
 {
     wdt_reset(); // reset watchdog timer to 0 seconds so no accidental restart occurs
-    
     handle_usb_data();
 }
