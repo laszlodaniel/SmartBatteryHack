@@ -1,6 +1,6 @@
 /*
  * SmartBatteryHack (https://github.com/laszlodaniel/SmartBatteryHack)
- * Copyright (C) 2020, László Dániel
+ * Copyright (C) 2021, Daniel Laszlo
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,8 +20,6 @@
 
 #include <avr/wdt.h>
 #include <Wire.h>
-
-//#define BQ208X
 
 #define ManufacturerAccess          0x00
 #define RemainingCapacityAlarm      0x01
@@ -56,13 +54,6 @@
 #define DeviceName                  0x21
 #define DeviceChemistry             0x22
 #define ManufacturerData            0x23
-
-#ifdef BQ208X
-#define PackStatusPackConfig        0x2f
-#else
-#define Authenticate                0x2f
-#endif
-
 #define Unknown_38                  0x38 // probably Cellvoltage4
 #define Unknown_39                  0x39 // probably CellVoltage3
 #define Unknown_3a                  0x3a // probably CellVoltage2
@@ -71,22 +62,10 @@
 #define CellVoltage3                0x3d
 #define CellVoltage2                0x3e
 #define CellVoltage1                0x3f
-
-#if defined (BQ208X)
-#define VPack                       0x45
-#define AFEData                     0x46
-#define PokeROMByte                 0x50
-#define SetROMAddress               0x51 // word write only
-#define PeekROMByte                 0x52
-#define PeekROMBlock                0x60 // block read/write, size  0x10 (16 bytes) except the last block
-#else
 #define SetROMAddress               0x40 // word write only
 #define PeekROMByte                 0x42
 #define PeekROMBlock                0x43 // block read, size seems to be always 0x20 (32 bytes)
-#define PokeROMBlock                0x44 // block write, size seems to be always 0x20 (32 bytes)
-#define AFEData                     0x45
 #define FETControl                  0x46
-#define StateOfHealth               0x4f
 #define SafetyAlert                 0x50
 #define SafetyStatus                0x51
 #define PFAlert                     0x52
@@ -106,7 +85,6 @@
 #define AuthenKey2                  0x64
 #define AuthenKey1                  0x65
 #define AuthenKey0                  0x66
-#define ManufacturerInfo            0x70
 #define SenseResistor               0x71
 #define TempRange                   0x72
 #define Timestamp                   0x73
@@ -115,15 +93,8 @@
 #define DataFlashClassSubClass1     0x78
 #define DataFlashClassSubClass2     0x79
 #define DataFlashClassSubClass3     0x7a
-#define DataFlashClassSubClass4     0x7b
-#define DataFlashClassSubClass5     0x7c
-#define DataFlashClassSubClass6     0x7d
-#define DataFlashClassSubClass7     0x7e
-#define DataFlashClassSubClass8     0x7f
 
-#endif
-
-#define buffer_length               257 // 1 length byte + 256 data bytes for block read write
+#define buffer_length               257 // 1 length byte + 256 data byte
 
 // Set (1), clear (0) and invert (1->0; 0->1) bit in a register or variable easily
 #define sbi(reg, bit) (reg) |=  (1 << (bit))
@@ -191,7 +162,7 @@ bool reverse_read_word_byte_order = true;
 bool reverse_write_word_byte_order = true;
 uint8_t smbus_reg_start = 0x00;
 uint8_t smbus_reg_end = 0xFF;
-
+uint16_t design_voltage = 0;
 
 // Packet related variables
 uint8_t command_timeout = 100; // milliseconds
@@ -201,14 +172,13 @@ uint8_t ack[1] = { 0x00 }; // acknowledge payload array
 uint8_t err[1] = { 0xFF }; // error payload array
 uint8_t ret[1]; // general array to store arbitrary bytes
 
-
 uint8_t read_byte(uint8_t reg)
 {
     Wire.beginTransmission(sb_address);
     Wire.write(reg);
-    Wire.requestFrom(sb_address, 1, true);
-    uint8_t value = Wire.read();
     Wire.endTransmission();
+    Wire.requestFrom(sb_address, 1);
+    uint8_t value = Wire.read();
     return value;
 }
 
@@ -225,10 +195,10 @@ uint16_t read_word(uint8_t reg, bool reverse = true)
 {
     Wire.beginTransmission(sb_address);
     Wire.write(reg);
-    Wire.requestFrom(sb_address, 2, true);
+    Wire.endTransmission();
+    Wire.requestFrom(sb_address, 2);
     uint8_t b1 = Wire.read();
     uint8_t b2 = Wire.read();
-    Wire.endTransmission();
     if (!reverse) return ((b1 << 8) | b2);
     else return ((b2 << 8) | b1);
 }
@@ -257,10 +227,11 @@ uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_le
 {
     Wire.beginTransmission(sb_address);
     Wire.write(reg);
-    Wire.requestFrom(sb_address, 1, true);
+    Wire.endTransmission();
+    Wire.requestFrom(sb_address, 1);
     uint8_t length = Wire.read();
     block_buffer[0] = length;
-    Wire.requestFrom(sb_address, length + 1, true);
+    Wire.requestFrom(sb_address, length + 1);
     Wire.read(); // read first length byte into oblivion
     
     for (uint16_t i = 0; i < length; i++)
@@ -268,7 +239,6 @@ uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_le
         block_buffer[1 + i] = Wire.read();
     }
     
-    Wire.endTransmission();
     return length + 1;
 }
 
@@ -309,34 +279,18 @@ void scan_smbus_address(void)
 
 void smbus_reg_dump(void)
 {
-    uint16_t smbus_reg_dump_payload_length = 0;
-    uint8_t smbus_reg_dump_payload[1018]; // payload max 1018 bytes each package due to uart protocol limit
-    smbus_reg_dump_payload[smbus_reg_dump_payload_length++] = smbus_reg_start; // start register
-    smbus_reg_dump_payload[smbus_reg_dump_payload_length++] = smbus_reg_end; // end register
+    uint16_t smbus_reg_dump_payload_length = 3*(smbus_reg_end - smbus_reg_start + 1) + 2;
+    uint8_t smbus_reg_dump_payload[smbus_reg_dump_payload_length]; // max 770 bytes
+    smbus_reg_dump_payload[0] = smbus_reg_start; // start register
+    smbus_reg_dump_payload[1] = smbus_reg_end; // end register
     uint16_t data = 0;
     
-    for (uint16_t i = smbus_reg_start; i <= smbus_reg_end; i++) //i is current reg, using uint16_t to avoid (0xff)++ not greater than 0xff
+    for (uint16_t i = smbus_reg_start; i < (smbus_reg_end + 1); i++)
     {
-        switch(i)
-        {
-            case ManufacturerName: //0x20 string
-            case DeviceName: //0x21 string
-            case DeviceChemistry: //0x22 string
-            case ManufacturerData: //0x23 hex data
-            {
-                uint8_t block_length = read_block(i, buffer, buffer_length); 
-                smbus_reg_dump_payload[smbus_reg_dump_payload_length++] = i; // register first
-                for(uint8_t j=0; j< block_length; j++)
-                    smbus_reg_dump_payload[smbus_reg_dump_payload_length++] = buffer[j]; // dumped block
-                break;
-            }
-
-            default:
-            data = read_word(i, reverse_read_word_byte_order);
-            smbus_reg_dump_payload[smbus_reg_dump_payload_length++] = i; // register first
-            smbus_reg_dump_payload[smbus_reg_dump_payload_length++] = (data >> 8) & 0xFF; // high byte of the word there
-            smbus_reg_dump_payload[smbus_reg_dump_payload_length++] = data & 0xFF; // low byte of the word there
-        }
+        data = read_word(i, reverse_read_word_byte_order);
+        smbus_reg_dump_payload[2 + (3*(i-smbus_reg_start))] = i; // register first
+        smbus_reg_dump_payload[3 + (3*(i-smbus_reg_start))] = (data >> 8) & 0xFF; // high byte of the word there
+        smbus_reg_dump_payload[4 + (3*(i-smbus_reg_start))] = data & 0xFF; // low byte of the word there
     }
     
     send_usb_packet(status, sd_smbus_reg_dump, smbus_reg_dump_payload, smbus_reg_dump_payload_length);
@@ -727,26 +681,13 @@ void handle_usb_data(void)
                     {
                         case sd_current_settings: // 0x01 - current settings
                         {
-                            uint16_t data;
-                            uint8_t ret[11] = { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
+                            uint8_t ret[3] = { 0x00, 0x00, 0x00 };
                             if (reverse_read_word_byte_order) sbi(ret[0], 0);
                             if (reverse_write_word_byte_order) sbi(ret[0], 1);
-                            data = read_word(DesignVoltage); //DesignVoltage
-                            ret[1] = (data >> 8) & 0xFF;
-                            ret[2] = data & 0xFF;
-                            data = read_word(DesignCapacity); //DesignCapacity
-                            ret[3] = (data >> 8) & 0xFF;
-                            ret[4] = data & 0xFF;
-                            write_word(ManufacturerAccess, 0x0001);
-                            data = read_word(ManufacturerAccess); //ChipID
-                            ret[5] = (data >> 8) & 0xFF;
-                            ret[6] = data & 0xFF;
-                            write_word(ManufacturerAccess, 0x0002);
-                            data = read_word(ManufacturerAccess); //Firmware version
-                            ret[7] = (data >> 8) & 0xFF;
-                            ret[8] = data & 0xFF;
-                                                       
-                            send_usb_packet(settings, sd_current_settings, ret, 9);
+                            ret[1] = (design_voltage >> 8) & 0xFF;
+                            ret[2] = design_voltage & 0xFF;
+                            
+                            send_usb_packet(settings, sd_current_settings, ret, 3);
                             break;
                         }
                         case sd_set_sb_address: // 0x02 - set smart battery address
@@ -949,7 +890,6 @@ void handle_usb_data(void)
     {
         // what TODO if nothing is in the serial receive buffer
     }
-     
 }
 
 void setup()

@@ -1,4 +1,4 @@
-namespace SmartBatteryHack
+﻿namespace SmartBatteryHack
 {
     partial class MainForm
     {
