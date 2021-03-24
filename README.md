@@ -5,6 +5,8 @@ This is a hacking tool for smart batteries using SMBus. Originally written for a
 
 **GUI** folder contains the C# source code and compiled binary for an external computer (Windows 7 and up) written in Visual Studio 2019.
 
+Check the [Wiki](https://github.com/laszlodaniel/SmartBatteryHack/wiki) for tutorials.
+
 ![GUI 01](https://boundaryconditionhome.files.wordpress.com/2020/01/sbhack_gui_01.png)
 
 ![GUI 02](https://boundaryconditionhome.files.wordpress.com/2020/01/sbhack_gui_02.png)
