@@ -29,9 +29,9 @@
 
 #elif defined (__AVR_ATmega1280__) || defined (__AVR_ATmega2560__) // Arduino Mega hardware I2C pins
     #define SDA_PORT PORTD
-    #define SDA_PIN 0
+    #define SDA_PIN 1
     #define SCL_PORT PORTD
-    #define SCL_PIN 1
+    #define SCL_PIN 0
 
 #else // for other boards select I2C-pins here
     #define SDA_PORT PORTC
@@ -42,6 +42,7 @@
 
 #define I2C_PULLUP 1 // enable internal pullup resistors for I2C-pins
 #define I2C_SLOWMODE 1 // 25 kHz
+#define I2C_NOINTERRUPT 1 // interrupts may interfere with SMBus operations
 #include <SoftI2CMaster.h> // https://github.com/felias-fogg/SoftI2CMaster
 
 #define ManufacturerAccess          0x00
