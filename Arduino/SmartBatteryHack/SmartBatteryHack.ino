@@ -9,7 +9,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -19,7 +19,6 @@
 // Board: Arduino Uno or Arduino Mega
 
 #include <avr/wdt.h>
-
 
 #if defined (__AVR_ATmega328P__) || defined (__AVR_ATmega328__) // Arduino Uno hardware I2C pins
     #define SDA_PORT PORTC
@@ -201,7 +200,9 @@ uint8_t read_byte(uint8_t reg)
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
     i2c_rep_start((sb_address << 1) | I2C_READ);
+
     uint8_t ret = i2c_read(true);
+
     i2c_stop();
     return ret;
 }
@@ -210,8 +211,9 @@ uint8_t write_byte(uint8_t reg, uint8_t data)
 {
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
-    //i2c_rep_start((sb_address << 1) | I2C_WRITE);
+
     uint8_t ret = i2c_write(data);
+
     i2c_stop();
     return ret; // number of bytes written
 }
@@ -221,9 +223,11 @@ uint16_t read_word(uint8_t reg, bool reverse = true)
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
     i2c_rep_start((sb_address << 1) | I2C_READ);
+
     uint8_t b1 = i2c_read(false);
     uint8_t b2 = i2c_read(true);
     i2c_stop();
+
     if (!reverse) return ((b1 << 8) | b2);
     else return ((b2 << 8) | b1);
 }
@@ -232,7 +236,7 @@ uint8_t write_word(uint8_t reg, uint16_t data, bool reverse = true)
 {
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
-    //i2c_rep_start((sb_address << 1) | I2C_WRITE);
+
     if (reverse)
     {
         i2c_write(data & 0xFF);
@@ -243,35 +247,41 @@ uint8_t write_word(uint8_t reg, uint16_t data, bool reverse = true)
         i2c_write((data >> 8) & 0xFF);
         i2c_write(data & 0xFF);
     }
+
     i2c_stop();
     return 2;
 }
 
-uint16_t read_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length)
+uint8_t read_block(uint8_t reg, uint8_t* block_buffer)
 {
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
     i2c_rep_start((sb_address << 1) | I2C_READ);
+
     uint8_t read_length = i2c_read(false); // first byte is length
     block_buffer[0] = read_length;
-    for (uint16_t i = 0; i < read_length - 1; i++) // last byte needs to be nack'd
+
+    for (uint8_t i = 0; i < (read_length - 1); i++) // last byte needs to be nack'd
     {
         block_buffer[1 + i] = i2c_read(false);
     }
+
     block_buffer[read_length] = i2c_read(true); // this will nack the last byte and store it in i's num_bytes-1 address.
     i2c_stop();
     return (read_length + 1);
 }
 
-uint16_t write_block(uint8_t reg, uint8_t* block_buffer, uint16_t block_buffer_length)
+uint8_t write_block(uint8_t reg, uint8_t* block_buffer, uint8_t block_buffer_length)
 {
     i2c_start((sb_address << 1) | I2C_WRITE);
     i2c_write(reg);
-    //i2c_rep_start((sb_address << 1) | I2C_WRITE);
-    for (uint16_t i = 0; i < block_buffer_length; i++)
+    i2c_write(block_buffer_length);
+
+    for (uint8_t i = 0; i < block_buffer_length; i++)
     {
          i2c_write(block_buffer[i]);
     }
+
     i2c_stop();
     return block_buffer_length;
 }
@@ -396,7 +406,7 @@ void read_rom_block(void)
         }
         while ((read_byte(PeekROMBlock) != 0x20) && (counter < 50));
 
-        read_block(PeekROMBlock, block_buffer, block_buffer_size);
+        read_block(PeekROMBlock, block_buffer);
         block_payload[0] = (address >> 8) & 0xFF;
         block_payload[1] = address & 0xFF;
 
@@ -504,7 +514,7 @@ void send_usb_packet(uint8_t command, uint8_t subdatacode, uint8_t *payloadbuff,
     // Start assembling the packet by manually filling the first few slots
     packet[0] = 0x3D; // add SYNC byte
     packet[1] = ((packet_length - 4) >> 8) & 0xFF; // add LENGTH high byte
-    packet[2] = (packet_length - 4) & 0xFF; // add LENGTH high byte
+    packet[2] = (packet_length - 4) & 0xFF; // add LENGTH low byte
     packet[3] = datacode; // add DATA CODE byte
     packet[4] = subdatacode; // add SUB-DATA CODE byte
     
@@ -792,7 +802,7 @@ void handle_usb_data(void)
                                 break;
                             }
 
-                            uint8_t block_length = read_block(cmd_payload[0], buffer, buffer_length);
+                            uint8_t block_length = read_block(cmd_payload[0], buffer);
                             uint8_t response_length = block_length + 1;
                             uint8_t response[response_length];
                             response[0] = cmd_payload[0];
